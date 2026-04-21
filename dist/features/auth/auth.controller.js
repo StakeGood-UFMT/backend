@@ -17,6 +17,7 @@ const common_1 = require("@nestjs/common");
 const auth_service_1 = require("./auth.service");
 const verify_auth_dto_1 = require("./dto/verify-auth.dto");
 const kyc_webhook_dto_1 = require("./dto/kyc-webhook.dto");
+const throttler_1 = require("@nestjs/throttler");
 let AuthController = class AuthController {
     authService;
     constructor(authService) {
@@ -34,7 +35,14 @@ let AuthController = class AuthController {
 };
 exports.AuthController = AuthController;
 __decorate([
+    (0, common_1.UseGuards)(throttler_1.ThrottlerGuard),
     (0, common_1.Get)('nonce'),
+    (0, throttler_1.Throttle)({
+        default: {
+            ttl: 60000,
+            limit: 5
+        }
+    }),
     __param(0, (0, common_1.Query)('wallet')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),

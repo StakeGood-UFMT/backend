@@ -49,7 +49,7 @@ exports.AppModule = AppModule = __decorate([
                 useFactory: (config) => [
                     {
                         ttl: config.get('THROTTLE_TTL', 60) * 1000,
-                        limit: config.get('THROTTLE_LIMIT', 100),
+                        limit: config.get('THROTTLE_LIMIT', 5),
                     },
                 ],
             }),

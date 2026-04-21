@@ -1,13 +1,22 @@
-import { Controller, Get, Post, Body, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query, UseGuards } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { VerifyAuthDto } from './dto/verify-auth.dto';
 import { KycWebhookDto } from './dto/kyc-webhook.dto';
+import { ThrottlerGuard, Throttle } from '@nestjs/throttler';
+
 
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
-
+  
+  @UseGuards(ThrottlerGuard) 
   @Get('nonce')
+  @Throttle({
+    default:{
+      ttl: 60000,
+      limit: 5
+    }
+  })
   getNonce(@Query('wallet') wallet: string) {
     return this.authService.generateNonce(wallet);
   }
