@@ -10,11 +10,12 @@ export declare class AuthController {
         ttl_seconds: number;
     }>;
     verify(dto: VerifyAuthDto): Promise<{
+        refresh_token: string;
         jwt: string;
         wallet: string;
         kyc_status: import("../../database/entities/user.entity").KycStatus;
         kyc_tier: import("../../database/entities/user.entity").KycTier;
-        expires_in: number;
+        expires_in: string;
         user: {
             id: string;
             primary_wallet: string;

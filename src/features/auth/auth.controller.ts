@@ -30,4 +30,9 @@ export class AuthController {
   kycWebhook(@Body() dto: KycWebhookDto) {
     return this.authService.processKycWebhook(dto);
   }
+
+  @Post('refresh')
+  refresh(@Body() refreshToken: string){
+    return this.authService.refreshToken(refreshToken);
+  }
 }

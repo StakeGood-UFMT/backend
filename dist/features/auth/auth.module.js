@@ -18,13 +18,14 @@ const jwt_strategy_1 = require("./strategies/jwt.strategy");
 const user_entity_1 = require("../../database/entities/user.entity");
 const auth_nonce_entity_1 = require("../../database/entities/auth-nonce.entity");
 const kyc_profile_entity_1 = require("../../database/entities/kyc-profile.entity");
+const refresh_tokens_1 = require("../../database/entities/refresh_tokens");
 let AuthModule = class AuthModule {
 };
 exports.AuthModule = AuthModule;
 exports.AuthModule = AuthModule = __decorate([
     (0, common_1.Module)({
         imports: [
-            typeorm_1.TypeOrmModule.forFeature([user_entity_1.UserEntity, auth_nonce_entity_1.AuthNonceEntity, kyc_profile_entity_1.KycProfileEntity]),
+            typeorm_1.TypeOrmModule.forFeature([user_entity_1.UserEntity, refresh_tokens_1.RefreshTokenEntity, auth_nonce_entity_1.AuthNonceEntity, kyc_profile_entity_1.KycProfileEntity]),
             passport_1.PassportModule,
             jwt_1.JwtModule.registerAsync({
                 imports: [config_1.ConfigModule],

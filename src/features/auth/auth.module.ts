@@ -9,10 +9,11 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { UserEntity } from '../../database/entities/user.entity';
 import { AuthNonceEntity } from '../../database/entities/auth-nonce.entity';
 import { KycProfileEntity } from '../../database/entities/kyc-profile.entity';
+import { RefreshTokenEntity } from '../../database/entities/refresh_tokens';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([UserEntity, AuthNonceEntity, KycProfileEntity]),
+    TypeOrmModule.forFeature([UserEntity, RefreshTokenEntity, AuthNonceEntity, KycProfileEntity]),
     PassportModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],

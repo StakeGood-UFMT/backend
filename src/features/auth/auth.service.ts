@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, UnauthorizedException } from '@nestjs/common';
+import { Injectable, BadRequestException, UnauthorizedException, HttpException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { JwtService } from '@nestjs/jwt';
 import { Repository } from 'typeorm';
@@ -7,6 +7,8 @@ import { UserEntity } from '../../database/entities/user.entity';
 import { AuthNonceEntity } from '../../database/entities/auth-nonce.entity';
 import { VerifyAuthDto } from './dto/verify-auth.dto';
 import { KycWebhookDto } from './dto/kyc-webhook.dto';
+import { Keypair } from '@stellar/stellar-base';
+import { RefreshTokenEntity } from '../../database/entities/refresh_tokens';
 
 @Injectable()
 export class AuthService {
@@ -16,7 +18,9 @@ export class AuthService {
     @InjectRepository(AuthNonceEntity)
     private readonly nonceRepo: Repository<AuthNonceEntity>,
     private readonly jwtService: JwtService,
-  ) {}
+    @InjectRepository(RefreshTokenEntity)
+    private readonly refreshRepo: Repository<RefreshTokenEntity>
+  ) { }
 
   async generateNonce(wallet: string) {
     if (!wallet || wallet.length !== 56 || !wallet.startsWith('G')) {
@@ -45,15 +49,48 @@ export class AuthService {
     if (nonceRecord.usedAt) {
       throw new BadRequestException('Nonce already used');
     }
+    try {
+      const keypair = Keypair.fromPublicKey(wallet);
 
-    // TODO: Validate Ed25519 signature via tweetnacl/stellar-sdk
-    // nacl.sign.open(signatureBuffer, publicKeyBuffer)
+      const isValid = keypair.verify(Buffer.from(nonce, 'hex'), Buffer.from(_signature, 'hex'));
+
+      if (!isValid) {
+        throw new UnauthorizedException('Assinatura inválida');
+      }
+
+    } catch (error) {
+
+      throw new UnauthorizedException('Erro na verificação da assinatura');
+    }
+
 
     await this.nonceRepo.update(nonceRecord.id, { usedAt: new Date() });
 
     let user = await this.userRepo.findOne({ where: { primaryWallet: wallet } });
     if (!user) {
       user = await this.userRepo.save({ primaryWallet: wallet });
+    }
+
+    const refreshTokenExpiresAt = new Date();
+    refreshTokenExpiresAt.setDate(refreshTokenExpiresAt.getDay() + 7);
+
+    const refreshToken = crypto.randomBytes(64).toString('hex');
+
+    const existingSession = await this.refreshRepo.findOne({
+      where: { user: { id: user.id } }
+    });
+
+    if (existingSession) {
+      await this.refreshRepo.update(existingSession.id, {
+        token: refreshToken,
+        expiresAt: refreshTokenExpiresAt
+      });
+    } else {
+      await this.refreshRepo.save({
+        user,
+        token: refreshToken,
+        expiresAt: refreshTokenExpiresAt
+      });
     }
 
     const token = this.jwtService.sign({
@@ -65,11 +102,12 @@ export class AuthService {
     });
 
     return {
+      refresh_token: refreshToken,
       jwt: token,
       wallet,
       kyc_status: user.kycStatus,
       kyc_tier: user.kycTier,
-      expires_in: 86400,
+      expires_in: '15m',
       user: {
         id: user.id,
         primary_wallet: user.primaryWallet,
@@ -77,6 +115,7 @@ export class AuthService {
         public_visibility: user.publicVisibility,
       },
     };
+
   }
 
   async processKycWebhook(dto: KycWebhookDto) {
@@ -91,4 +130,47 @@ export class AuthService {
 
     return { status: 'processed' };
   }
+
+  async refreshToken(refreshToken: string){
+    const token= await this.refreshRepo.findOne({ where: { token: refreshToken }, relations: ['user']});
+
+    const now = new Date();
+
+    if(!token || token.revoked){
+       throw new BadRequestException('Refresh token not available');
+    }
+    if(new Date(token.expiresAt).getTime() < now.getTime()){
+      throw new BadRequestException('Refresh token expired');
+    }
+
+    const user: UserEntity = token.user;
+
+    const newToken = this.jwtService.sign({
+      sub: user.primaryWallet,
+      userId: user.id,
+      kyc_status: user.kycStatus,
+      kyc_tier: user.kycTier,
+      role: user.role,
+    });
+
+    return {
+      refresh_token: refreshToken,
+      jwt: token,
+      wallet: user.primaryWallet,
+      kyc_status: user.kycStatus,
+      kyc_tier: user.kycTier,
+      expires_in: '15m',
+      user: {
+        id: user.id,
+        primary_wallet: user.primaryWallet,
+        role: user.role,
+        public_visibility: user.publicVisibility,
+      },
+    };
+
+
+  }
+
+
+
 }

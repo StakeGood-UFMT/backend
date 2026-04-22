@@ -53,14 +53,18 @@ const typeorm_2 = require("typeorm");
 const crypto = __importStar(require("crypto"));
 const user_entity_1 = require("../../database/entities/user.entity");
 const auth_nonce_entity_1 = require("../../database/entities/auth-nonce.entity");
+const stellar_base_1 = require("@stellar/stellar-base");
+const refresh_tokens_1 = require("../../database/entities/refresh_tokens");
 let AuthService = class AuthService {
     userRepo;
     nonceRepo;
     jwtService;
-    constructor(userRepo, nonceRepo, jwtService) {
+    refreshRepo;
+    constructor(userRepo, nonceRepo, jwtService, refreshRepo) {
         this.userRepo = userRepo;
         this.nonceRepo = nonceRepo;
         this.jwtService = jwtService;
+        this.refreshRepo = refreshRepo;
     }
     async generateNonce(wallet) {
         if (!wallet || wallet.length !== 56 || !wallet.startsWith('G')) {
@@ -82,10 +86,39 @@ let AuthService = class AuthService {
         if (nonceRecord.usedAt) {
             throw new common_1.BadRequestException('Nonce already used');
         }
+        try {
+            const keypair = stellar_base_1.Keypair.fromPublicKey(wallet);
+            const isValid = keypair.verify(Buffer.from(nonce, 'hex'), Buffer.from(_signature, 'hex'));
+            if (!isValid) {
+                throw new common_1.UnauthorizedException('Assinatura inválida');
+            }
+        }
+        catch (error) {
+            throw new common_1.UnauthorizedException('Erro na verificação da assinatura');
+        }
         await this.nonceRepo.update(nonceRecord.id, { usedAt: new Date() });
         let user = await this.userRepo.findOne({ where: { primaryWallet: wallet } });
         if (!user) {
             user = await this.userRepo.save({ primaryWallet: wallet });
+        }
+        const refreshTokenExpiresAt = new Date();
+        refreshTokenExpiresAt.setHours(refreshTokenExpiresAt.getHours() + 24);
+        const refreshToken = crypto.randomBytes(64).toString('hex');
+        const existingSession = await this.refreshRepo.findOne({
+            where: { user: { id: user.id } }
+        });
+        if (existingSession) {
+            await this.refreshRepo.update(existingSession.id, {
+                token: refreshToken,
+                expiresAt: refreshTokenExpiresAt
+            });
+        }
+        else {
+            await this.refreshRepo.save({
+                user,
+                token: refreshToken,
+                expiresAt: refreshTokenExpiresAt
+            });
         }
         const token = this.jwtService.sign({
             sub: wallet,
@@ -95,11 +128,12 @@ let AuthService = class AuthService {
             role: user.role,
         });
         return {
+            refresh_token: refreshToken,
             jwt: token,
             wallet,
             kyc_status: user.kycStatus,
             kyc_tier: user.kycTier,
-            expires_in: 86400,
+            expires_in: '15m',
             user: {
                 id: user.id,
                 primary_wallet: user.primaryWallet,
@@ -124,8 +158,10 @@ exports.AuthService = AuthService = __decorate([
     (0, common_1.Injectable)(),
     __param(0, (0, typeorm_1.InjectRepository)(user_entity_1.UserEntity)),
     __param(1, (0, typeorm_1.InjectRepository)(auth_nonce_entity_1.AuthNonceEntity)),
+    __param(3, (0, typeorm_1.InjectRepository)(refresh_tokens_1.RefreshTokenEntity)),
     __metadata("design:paramtypes", [typeorm_2.Repository,
         typeorm_2.Repository,
-        jwt_1.JwtService])
+        jwt_1.JwtService,
+        typeorm_2.Repository])
 ], AuthService);
 //# sourceMappingURL=auth.service.js.map
