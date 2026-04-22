@@ -1,14 +1,16 @@
-import { Injectable, BadRequestException, UnauthorizedException, HttpException } from '@nestjs/common';
+import { Injectable, BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { JwtService } from '@nestjs/jwt';
 import { Repository } from 'typeorm';
 import * as crypto from 'crypto';
 import { UserEntity } from '../../database/entities/user.entity';
 import { AuthNonceEntity } from '../../database/entities/auth-nonce.entity';
+import { KycProfileEntity } from '../../database/entities/kyc-profile.entity';
 import { VerifyAuthDto } from './dto/verify-auth.dto';
 import { KycWebhookDto } from './dto/kyc-webhook.dto';
 import { Keypair } from '@stellar/stellar-base';
 import { RefreshTokenEntity } from '../../database/entities/refresh_tokens';
+import { StakeGoodGateway } from '../websocket/stakegood.gateway';
 
 @Injectable()
 export class AuthService {
@@ -17,9 +19,12 @@ export class AuthService {
     private readonly userRepo: Repository<UserEntity>,
     @InjectRepository(AuthNonceEntity)
     private readonly nonceRepo: Repository<AuthNonceEntity>,
+    @InjectRepository(KycProfileEntity)
+    private readonly kycProfileRepo: Repository<KycProfileEntity>,
     private readonly jwtService: JwtService,
     @InjectRepository(RefreshTokenEntity)
-    private readonly refreshRepo: Repository<RefreshTokenEntity>
+    private readonly refreshRepo: Repository<RefreshTokenEntity>,
+    private readonly gateway: StakeGoodGateway,
   ) { }
 
   async generateNonce(wallet: string) {
@@ -119,14 +124,45 @@ export class AuthService {
   }
 
   async processKycWebhook(dto: KycWebhookDto) {
-    const user = await this.userRepo.findOne({
-      where: { id: dto.externalUserId },
-    });
-
+    const user = await this.userRepo.findOne({ where: { id: dto.externalUserId } });
     if (!user) return { status: 'ignored' };
 
-    const status = dto.review.reviewStatus === 'approved' ? 'verified' : 'rejected';
-    await this.userRepo.update(user.id, { kycStatus: status as any });
+    const newStatus = dto.review.reviewStatus === 'approved' ? 'verified' : 'rejected';
+
+    // Idempotência: não reverter estado já aprovado
+    if (user.kycStatus === 'verified' && newStatus === 'rejected') {
+      return { status: 'ignored' };
+    }
+
+    await this.userRepo.update(user.id, { kycStatus: newStatus as any });
+
+    const providerId = dto.applicant?.id ?? 'unknown';
+    const existing = await this.kycProfileRepo.findOne({ where: { userId: user.id } });
+
+    const profileStatus = newStatus === 'verified' ? 'approved' : 'rejected';
+    const now = new Date();
+
+    if (existing) {
+      await this.kycProfileRepo.update(existing.id, {
+        status: profileStatus,
+        providerId,
+        verifiedAt: profileStatus === 'approved' ? now : existing.verifiedAt,
+        rawData: dto as unknown as Record<string, any>,
+      });
+    } else {
+      await this.kycProfileRepo.save({
+        userId: user.id,
+        providerId,
+        status: profileStatus,
+        verifiedAt: profileStatus === 'approved' ? now : undefined,
+        rawData: dto as unknown as Record<string, any>,
+      });
+    }
+
+    this.gateway.emitKycStatusUpdated(user.id, {
+      status: newStatus,
+      updatedAt: now.toISOString(),
+    });
 
     return { status: 'processed' };
   }

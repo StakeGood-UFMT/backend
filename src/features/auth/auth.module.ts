@@ -6,15 +6,18 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
+import { HmacWebhookGuard } from './guards/hmac-webhook.guard';
 import { UserEntity } from '../../database/entities/user.entity';
 import { AuthNonceEntity } from '../../database/entities/auth-nonce.entity';
 import { KycProfileEntity } from '../../database/entities/kyc-profile.entity';
 import { RefreshTokenEntity } from '../../database/entities/refresh_tokens';
+import { WebsocketModule } from '../websocket/websocket.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([UserEntity, RefreshTokenEntity, AuthNonceEntity, KycProfileEntity]),
     PassportModule,
+    WebsocketModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -25,7 +28,7 @@ import { RefreshTokenEntity } from '../../database/entities/refresh_tokens';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy],
+  providers: [AuthService, JwtStrategy, HmacWebhookGuard],
   exports: [AuthService, JwtModule],
 })
 export class AuthModule {}

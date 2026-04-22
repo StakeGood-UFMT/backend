@@ -1,6 +1,7 @@
 import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { MarketsService } from './markets.service';
+import { ListMarketsQueryDto } from './dto/list-markets-query.dto';
 
 @Controller('markets')
 @UseGuards(AuthGuard('jwt'))
@@ -8,14 +9,13 @@ export class MarketsController {
   constructor(private readonly marketsService: MarketsService) {}
 
   @Get()
-  findAll(
-    @Query('status') status?: string,
-    @Query('category') category?: string,
-    @Query('limit') limit = 20,
-    @Query('offset') offset = 0,
-    @Query('sort') sort = 'newest',
-  ) {
-    return this.marketsService.findAll({ status, category, limit: +limit, offset: +offset, sort });
+  findAll(@Query() query: ListMarketsQueryDto) {
+    return this.marketsService.findAll(query);
+  }
+
+  @Get(':id')
+  findOne(@Param('id') id: string) {
+    return this.marketsService.findOne(id);
   }
 
   @Get(':id/history')

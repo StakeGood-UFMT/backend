@@ -3,14 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { MarketEntity } from '../../database/entities/market.entity';
 import { MarketSnapshotEntity } from '../../database/entities/market-snapshot.entity';
-
-interface FindAllOptions {
-  status?: string;
-  category?: string;
-  limit: number;
-  offset: number;
-  sort: string;
-}
+import { ListMarketsQueryDto, MarketSortOption } from './dto/list-markets-query.dto';
 
 @Injectable()
 export class MarketsService {
@@ -21,26 +14,82 @@ export class MarketsService {
     private readonly snapshotRepo: Repository<MarketSnapshotEntity>,
   ) {}
 
-  async findAll(options: FindAllOptions) {
-    const query = this.marketRepo.createQueryBuilder('m');
+  // SC allows state=OPEN after lock_ts, so we derive the UI status here
+  derivedStatus(market: MarketEntity): string {
+    if (market.status === 'active' && new Date() >= market.lockAt) return 'LOCKED';
+    return market.status;
+  }
 
-    if (options.status) query.andWhere('m.status = :status', { status: options.status });
-    if (options.category) query.andWhere('m.category = :category', { category: options.category });
+  async findAll(query: ListMarketsQueryDto) {
+    const { status, category, limit = 20, offset = 0, sort = MarketSortOption.NEWEST } = query;
 
-    const orderMap: Record<string, string> = {
-      newest: 'created_at DESC',
-      oldest: 'created_at ASC',
+    const qb = this.marketRepo.createQueryBuilder('m');
+
+    if (status) qb.andWhere('m.status = :status', { status });
+    if (category) qb.andWhere('m.category = :category', { category });
+
+    const orderMap: Record<MarketSortOption, { col: string; dir: 'ASC' | 'DESC' }> = {
+      [MarketSortOption.NEWEST]: { col: 'm.createdAt', dir: 'DESC' },
+      [MarketSortOption.OLDEST]: { col: 'm.createdAt', dir: 'ASC' },
+      [MarketSortOption.VOLUME]: { col: 'm.createdAt', dir: 'DESC' },
     };
-    const order = orderMap[options.sort] ?? 'created_at DESC';
-    query.orderBy(`m.${order.split(' ')[0]}`, order.includes('ASC') ? 'ASC' : 'DESC');
+    const { col, dir } = orderMap[sort] ?? orderMap[MarketSortOption.NEWEST];
+    qb.orderBy(col, dir).skip(offset).take(limit);
 
-    query.skip(options.offset).take(options.limit);
+    const [markets, total] = await qb.getManyAndCount();
 
-    const [markets, total] = await query.getManyAndCount();
+    const latestSnapshots = await this.getLatestSnapshotsForMarkets(markets.map((m) => m.id));
+
+    const items = markets.map((market) => {
+      const snap = latestSnapshots.get(market.id);
+      return {
+        id: market.id,
+        title: market.title,
+        category: market.category,
+        status: market.status,
+        derived_status: this.derivedStatus(market),
+        lock_at: market.lockAt,
+        resolve_at: market.resolveAt,
+        outcome: market.outcome ?? null,
+        asset_code: market.assetCode ?? null,
+        current_prices: snap ? this.formatPrices(snap) : null,
+        created_at: market.createdAt,
+      };
+    });
 
     return {
-      markets,
-      pagination: { total, limit: options.limit, offset: options.offset, has_next: options.offset + options.limit < total },
+      markets: items,
+      pagination: { total, limit, offset, has_next: offset + limit < total },
+    };
+  }
+
+  async findOne(id: string) {
+    const market = await this.marketRepo.findOne({ where: { id } });
+    if (!market) throw new NotFoundException('Market not found');
+
+    const snap = await this.snapshotRepo
+      .createQueryBuilder('s')
+      .where('s.market_id = :id', { id })
+      .orderBy('s.timestamp', 'DESC')
+      .limit(1)
+      .getOne();
+
+    return {
+      id: market.id,
+      title: market.title,
+      description: market.description ?? null,
+      category: market.category ?? null,
+      status: market.status,
+      derived_status: this.derivedStatus(market),
+      lock_at: market.lockAt,
+      resolve_at: market.resolveAt,
+      outcome: market.outcome ?? null,
+      oracle_ref: market.oracleRef ?? null,
+      asset_code: market.assetCode ?? null,
+      asset_issuer: market.assetIssuer ?? null,
+      current_prices: snap ? this.formatPrices(snap) : null,
+      created_at: market.createdAt,
+      updated_at: market.updatedAt,
     };
   }
 
@@ -49,7 +98,8 @@ export class MarketsService {
     if (!market) throw new NotFoundException('Market not found');
 
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-    const snapshots = await this.snapshotRepo.createQueryBuilder('s')
+    const snapshots = await this.snapshotRepo
+      .createQueryBuilder('s')
       .where('s.market_id = :marketId', { marketId })
       .andWhere('s.timestamp >= :since', { since })
       .orderBy('s.timestamp', 'ASC')
@@ -58,13 +108,43 @@ export class MarketsService {
     return {
       market_id: marketId,
       title: market.title,
+      derived_status: this.derivedStatus(market),
       snapshots: snapshots.map((s) => ({
         timestamp: s.timestamp,
         yes_pool: s.yesPool,
         no_pool: s.noPool,
         yes_probability: s.impliedProbYes,
-        trading_volume: s.tradingVolume,
+        no_probability: parseFloat((1 - s.impliedProbYes).toFixed(8)),
+        trading_volume: s.tradingVolume ?? null,
       })),
+    };
+  }
+
+  private async getLatestSnapshotsForMarkets(
+    marketIds: string[],
+  ): Promise<Map<string, MarketSnapshotEntity>> {
+    if (!marketIds.length) return new Map();
+
+    // Subquery: pick the most recent snapshot per market
+    const rows = await this.snapshotRepo
+      .createQueryBuilder('s')
+      .where('s.market_id IN (:...ids)', { ids: marketIds })
+      .distinctOn(['s.market_id'])
+      .orderBy('s.market_id')
+      .addOrderBy('s.timestamp', 'DESC')
+      .getMany();
+
+    return new Map(rows.map((r) => [r.marketId, r]));
+  }
+
+  private formatPrices(snap: MarketSnapshotEntity) {
+    const yesProbability = snap.impliedProbYes;
+    return {
+      yes_probability: parseFloat(yesProbability.toFixed(8)),
+      no_probability: parseFloat((1 - yesProbability).toFixed(8)),
+      yes_pool: snap.yesPool,
+      no_pool: snap.noPool,
+      trading_volume: snap.tradingVolume ?? null,
     };
   }
 }

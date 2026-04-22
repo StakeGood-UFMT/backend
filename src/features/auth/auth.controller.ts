@@ -3,6 +3,7 @@ import { AuthService } from './auth.service';
 import { VerifyAuthDto } from './dto/verify-auth.dto';
 import { KycWebhookDto } from './dto/kyc-webhook.dto';
 import { ThrottlerGuard, Throttle } from '@nestjs/throttler';
+import { HmacWebhookGuard } from './guards/hmac-webhook.guard';
 
 
 @Controller('auth')
@@ -26,6 +27,7 @@ export class AuthController {
     return this.authService.verifySignature(dto);
   }
 
+  @UseGuards(HmacWebhookGuard)
   @Post('kyc/webhook')
   kycWebhook(@Body() dto: KycWebhookDto) {
     return this.authService.processKycWebhook(dto);
