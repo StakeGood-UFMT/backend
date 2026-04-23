@@ -8,6 +8,7 @@ import { MarketEntity } from '../../database/entities/market.entity';
 import { MarketSnapshotEntity } from '../../database/entities/market-snapshot.entity';
 import { DepositEntity } from '../../database/entities/deposit.entity';
 import { BuildPredictionDto } from './dto/build-prediction.dto';
+import { SubmitTransactionDto } from './dto/submit-transaction.dto';
 
 @Injectable()
 export class TransactionsService {
@@ -61,6 +62,7 @@ export class TransactionsService {
 
     return {
       xdr,
+      txHash: '0x' + Math.random().toString(16).slice(2, 10) + '...placeholder',
       summary: {
         action: 'place_prediction',
         market: { id: market.id, title: market.title },
@@ -95,5 +97,15 @@ export class TransactionsService {
         remaining: remaining.toFixed(2),
       });
     }
+  }
+
+  async submit(dto: SubmitTransactionDto) {
+    // TODO: Actually submit to Stellar network
+    // For now, return success mock
+    return {
+      success: true,
+      status: 'pending_confirmation',
+      message: 'Transaction received and being processed'
+    };
   }
 }
