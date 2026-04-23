@@ -26,4 +26,9 @@ export class MarketsController {
   ) {
     return this.marketsService.getHistory(id, interval, +days);
   }
+
+  @Get(':id')
+  findOne(@Param('id') id: string) {
+    return this.marketsService.findOne(id);
+  }
 }

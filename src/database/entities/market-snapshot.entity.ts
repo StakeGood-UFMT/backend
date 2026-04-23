@@ -28,6 +28,8 @@ export class MarketSnapshotEntity {
   createdAt: Date;
 
   get impliedProbYes(): number {
-    return this.yesPool / (this.yesPool + this.noPool);
+    const yes = Number(this.yesPool);
+    const no = Number(this.noPool);
+    return (yes / (yes + no)) * 100;
   }
 }

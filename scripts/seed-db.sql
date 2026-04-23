@@ -56,22 +56,22 @@ VALUES
 CREATE TEMP TABLE temp_ngos AS SELECT id, slug FROM ngos;
 
 -- Active Markets
-INSERT INTO markets (id, title, description, category, status, lock_at, resolve_at, created_by, created_at, updated_at)
+INSERT INTO markets (id, title, description, category, status, lock_at, resolve_at, created_by, image_url, resolution_rule, resolution_source, oracle_url, contract_address, created_at, updated_at)
 VALUES 
-(gen_random_uuid(), 'Will the global average temperature increase by 1.5°C by 2027?', 'Climate change prediction based on NASA data.', 'Environment', 'active', '2027-01-01', '2027-02-01', 'GCWD3PDC7WSRPRXZQ4A6L724VV2UXSRAOWE2HYLJSSDGUG4AGXTUX5D4', NOW(), NOW()),
-(gen_random_uuid(), 'Will Ethereum switch to a new consensus layer again in 2025?', 'Prediction on ETH roadmap.', 'Tech', 'active', '2025-12-31', '2026-01-15', 'GCWD3PDC7WSRPRXZQ4A6L724VV2UXSRAOWE2HYLJSSDGUG4AGXTUX5D4', NOW(), NOW()),
-(gen_random_uuid(), 'Will Brazil win the 2026 World Cup?', 'Sports prediction.', 'Sports', 'active', '2026-06-11', '2026-07-20', 'GCWD3PDC7WSRPRXZQ4A6L724VV2UXSRAOWE2HYLJSSDGUG4AGXTUX5D4', NOW(), NOW());
+(gen_random_uuid(), 'Will the global average temperature increase by 1.5°C by 2027?', 'Climate change prediction based on NASA data.', 'Environment', 'active', '2027-01-01', '2027-02-01', 'GCWD3PDC7WSRPRXZQ4A6L724VV2UXSRAOWE2HYLJSSDGUG4AGXTUX5D4', 'https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05', 'Average global temperature as reported by NASA GISS.', 'https://data.giss.nasa.gov/', 'https://api.oracle.com/v1/temp', 'C123...', NOW(), NOW()),
+(gen_random_uuid(), 'Will Ethereum switch to a new consensus layer again in 2025?', 'Prediction on ETH roadmap.', 'Tech', 'active', '2025-12-31', '2026-01-15', 'GCWD3PDC7WSRPRXZQ4A6L724VV2UXSRAOWE2HYLJSSDGUG4AGXTUX5D4', 'https://images.unsplash.com/photo-1622741821284-673f3839ce21', 'Official Ethereum Foundation blog announcement.', 'https://blog.ethereum.org/', 'https://api.oracle.com/v1/eth', 'C456...', NOW(), NOW()),
+(gen_random_uuid(), 'Will Brazil win the 2026 World Cup?', 'Sports prediction.', 'Sports', 'active', '2026-06-11', '2026-07-20', 'GCWD3PDC7WSRPRXZQ4A6L724VV2UXSRAOWE2HYLJSSDGUG4AGXTUX5D4', 'https://images.unsplash.com/photo-1574629810360-7efbbe195018', 'Official FIFA match results.', 'https://fifa.com', 'https://api.oracle.com/v1/sports', 'C789...', NOW(), NOW());
 
 -- Resolved Markets
-INSERT INTO markets (id, title, description, category, status, lock_at, resolve_at, outcome, created_at, updated_at)
+INSERT INTO markets (id, title, description, category, status, lock_at, resolve_at, outcome, image_url, resolution_rule, resolution_source, created_at, updated_at)
 VALUES 
-(gen_random_uuid(), 'Did Bitcoin reach $70k in Q1 2024?', 'Finance prediction.', 'Finance', 'resolved', '2024-03-31', '2024-04-01', 'YES', NOW() - interval '6 months', NOW()),
-(gen_random_uuid(), 'Did Apple release a VR headset in 2023?', 'Tech prediction.', 'Tech', 'resolved', '2023-12-31', '2024-01-01', 'YES', NOW() - interval '12 months', NOW());
+(gen_random_uuid(), 'Did Bitcoin reach $70k in Q1 2024?', 'Finance prediction.', 'Finance', 'resolved', '2024-03-31', '2024-04-01', 'YES', 'https://images.unsplash.com/photo-1518546305927-5a555bb7020d', 'CoinMarketCap daily close price.', 'https://coinmarketcap.com', NOW() - interval '6 months', NOW()),
+(gen_random_uuid(), 'Did Apple release a VR headset in 2023?', 'Tech prediction.', 'Tech', 'resolved', '2023-12-31', '2024-01-01', 'YES', 'https://images.unsplash.com/photo-1622979135225-d2ba269cf1ac', 'Official Apple Newsroom announcement.', 'https://apple.com/newsroom', NOW() - interval '12 months', NOW());
 
 -- Locked Markets (Waiting for Oracle)
-INSERT INTO markets (id, title, description, category, status, lock_at, resolve_at, created_at, updated_at)
+INSERT INTO markets (id, title, description, category, status, lock_at, resolve_at, image_url, resolution_rule, resolution_source, created_at, updated_at)
 VALUES 
-(gen_random_uuid(), 'Federal Reserve Interest Rate Cut in September 2024?', 'Economy prediction.', 'Finance', 'locked', '2024-09-18', '2024-09-19', NOW() - interval '1 month', NOW());
+(gen_random_uuid(), 'Federal Reserve Interest Rate Cut in September 2024?', 'Economy prediction.', 'Finance', 'locked', '2024-09-18', '2024-09-19', 'https://images.unsplash.com/photo-1611974714024-4696144e0078', 'Official Federal Reserve press release.', 'https://federalreserve.gov', NOW() - interval '1 month', NOW());
 
 -- 5. USER POSITIONS (Stakes)
 INSERT INTO user_positions (id, user_id, market_id, outcome, amount_staked, status, created_at, updated_at)
@@ -89,17 +89,18 @@ WHERE u.role = 'user' AND m.status IN ('active', 'resolved')
 LIMIT 40;
 
 -- 6. MARKET SNAPSHOTS (History for charts)
+-- Generate 7 days of hourly data for ALL markets
 INSERT INTO market_snapshots (id, market_id, timestamp, yes_pool, no_pool, trading_volume, created_at)
 SELECT 
     gen_random_uuid(), 
     m.id, 
     NOW() - (i || ' hours')::interval, 
-    (1000 + random() * 500)::decimal,
-    (1000 + random() * 500)::decimal,
-    (random() * 100)::decimal,
+    -- Create a "random walk" style pool distribution
+    (1500 + (sin(i/10.0) * 500) + (random() * 200))::decimal,
+    (1500 + (cos(i/10.0) * 500) + (random() * 200))::decimal,
+    (random() * 50)::decimal,
     NOW()
-FROM markets m, generate_series(1, 24) i
-WHERE m.status = 'active';
+FROM markets m, generate_series(0, 168) i;
 
 -- 7. IMPACT LEDGER ENTRIES
 INSERT INTO impact_ledger_entries (id, date, ngo_id, amount, currency, source, created_at)

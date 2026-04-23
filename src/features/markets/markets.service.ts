@@ -39,7 +39,17 @@ export class MarketsService {
     const [markets, total] = await query.getManyAndCount();
 
     return {
-      markets,
+      markets: markets.map((m) => ({
+        id: m.id,
+        title: m.title,
+        description: m.description,
+        category: m.category,
+        status: m.status,
+        image_url: m.imageUrl,
+        lock_at: m.lockAt,
+        settle_at: m.resolveAt,
+        created_at: m.createdAt,
+      })),
       pagination: { total, limit: options.limit, offset: options.offset, has_next: options.offset + options.limit < total },
     };
   }
@@ -65,6 +75,42 @@ export class MarketsService {
         yes_probability: s.impliedProbYes,
         trading_volume: s.tradingVolume,
       })),
+    };
+  }
+
+  async findOne(id: string) {
+    const market = await this.marketRepo.findOne({ where: { id } });
+    if (!market) throw new NotFoundException('Market not found');
+
+    const latestSnapshot = await this.snapshotRepo.findOne({
+      where: { marketId: id },
+      order: { timestamp: 'DESC' },
+    });
+
+    const yesPool = Number(latestSnapshot?.yesPool || 1);
+    const noPool = Number(latestSnapshot?.noPool || 1);
+    const totalLiquidity = yesPool + noPool;
+
+    return {
+      id: market.id,
+      title: market.title,
+      description: market.description,
+      category: market.category,
+      status: market.status,
+      image_url: market.imageUrl,
+      yes_price: yesPool / totalLiquidity,
+      no_price: noPool / totalLiquidity,
+      total_liquidity: totalLiquidity.toFixed(2),
+      lock_at: market.lockAt,
+      settle_at: market.resolveAt,
+      created_at: market.createdAt,
+      resolution_rule: market.resolutionRule,
+      resolution_source: market.resolutionSource,
+      oracle_url: market.oracleUrl,
+      contract_address: market.contractAddress,
+      fee_ngo: Number(market.feeNgo),
+      fee_platform: Number(market.feePlatform),
+      fee_gamification: Number(market.feeGamification),
     };
   }
 }
