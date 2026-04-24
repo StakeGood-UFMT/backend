@@ -1,8 +1,9 @@
 import {
-  Injectable, NotFoundException, ForbiddenException, BadRequestException,
+  Injectable, NotFoundException, ForbiddenException, BadRequestException, ConflictException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import * as StellarSdk from '@stellar/stellar-sdk';
 import { UserEntity } from '../../database/entities/user.entity';
 import { MarketEntity } from '../../database/entities/market.entity';
 import { MarketSnapshotEntity } from '../../database/entities/market-snapshot.entity';
@@ -30,19 +31,41 @@ export class TransactionsService {
     const user = await this.userRepo.findOne({ where: { id: jwtUser.userId } });
     if (!user) throw new NotFoundException('User not found');
 
+    // Validation: KYC Status
     if (user.kycStatus !== 'verified') {
-      throw new ForbiddenException({ error: 'KYC_REQUIRED', kyc_status: user.kycStatus });
+      throw new ForbiddenException({
+        error: 'KYC_REQUIRED',
+        kyc_status: user.kycStatus,
+        message: 'Verified KYC is required to place predictions.'
+      });
     }
 
+    // Validation: Spending Limit (BE-6A)
     await this.checkSpendingLimit(user, parseFloat(dto.amount));
 
     const market = await this.marketRepo.findOne({ where: { id: dto.market_id } });
     if (!market) throw new NotFoundException('Market not found');
+
+    // Validation: Market Status and Lock Time
     if (market.status !== 'active') {
       throw new BadRequestException('Market is not active');
     }
     if (new Date() >= market.lockAt) {
       throw new BadRequestException('Market is locked for betting');
+    }
+
+    // Validation: Hedge Lock (Anti-Hedge)
+    // Users cannot bet on the opposite outcome if they already have a position
+    const existingPosition = await this.userPositionRepo.findOne({
+      where: { userId: user.id, marketId: market.id },
+    });
+
+    if (existingPosition && existingPosition.outcome !== dto.outcome) {
+      throw new ConflictException({
+        error: 'HEDGE_LOCK_VIOLATION',
+        message: 'Hedging is not allowed. You already have a position on the opposite outcome in this market.',
+        existing_outcome: existingPosition.outcome,
+      });
     }
 
     const snapshot = await this.snapshotRepo.findOne({
@@ -60,12 +83,47 @@ export class TransactionsService {
       : (yesPool + noPool + amount) / (noPool + amount);
     const potentialWin = amount * payoutMultiplier;
 
-    // TODO: Build real Stellar XDR via stellar-sdk
-    const xdr = 'PLACEHOLDER_XDR_BASE64';
+    // Soroban XDR Generation
+    // Function: place_prediction(user: Address, market_id: u64, outcome: u32, amount: i128)
+    const contractId = market.contractAddress || 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4'; // Placeholder if not set
+    const amountStroops = BigInt(Math.floor(amount * 10000000)); // 7 decimals for USDC/SAC
+    
+    // TODO: Maintain a numeric mapping for market_id (u64) in the database
+    // For now using 1 as a placeholder for the contract-side market ID
+    const marketIdU64 = BigInt(1); 
+    const outcomeU32 = dto.outcome === 'YES' ? 1 : 2;
+
+    const op = StellarSdk.Operation.invokeHostFunction({
+      func: StellarSdk.xdr.HostFunction.hostFunctionTypeInvokeContract(
+        new StellarSdk.xdr.InvokeContractArgs({
+          contractAddress: StellarSdk.Address.fromString(contractId).toScAddress(),
+          functionName: 'place_prediction',
+          args: [
+            StellarSdk.nativeToScVal(new StellarSdk.Address(user.primaryWallet)),
+            StellarSdk.nativeToScVal(marketIdU64, { type: 'u64' }),
+            StellarSdk.nativeToScVal(outcomeU32, { type: 'u32' }),
+            StellarSdk.nativeToScVal(amountStroops, { type: 'i128' }),
+          ],
+        }),
+      ),
+      auth: [],
+    });
+
+    // Build the transaction (without signing, to be returned as XDR)
+    // Note: We use a dummy sequence '0' as the frontend will typically handle the sequence or fetch it
+    const tx = new StellarSdk.TransactionBuilder(
+      new StellarSdk.Account(user.primaryWallet, '0'),
+      { fee: '10000', networkPassphrase: StellarSdk.Networks.TESTNET }
+    )
+      .addOperation(op)
+      .setTimeout(StellarSdk.TimeoutInfinite)
+      .build();
+
+    const xdr = tx.toXDR();
 
     return {
       xdr,
-      txHash: '0x' + Math.random().toString(16).slice(2, 10) + '...placeholder',
+      txHash: tx.hash().toString('hex'),
       summary: {
         action: 'place_prediction',
         market: { id: market.id, title: market.title },
@@ -115,3 +173,4 @@ export class TransactionsService {
     };
   }
 }
+
