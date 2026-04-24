@@ -7,6 +7,7 @@ import { UserEntity } from '../../database/entities/user.entity';
 import { MarketEntity } from '../../database/entities/market.entity';
 import { MarketSnapshotEntity } from '../../database/entities/market-snapshot.entity';
 import { DepositEntity } from '../../database/entities/deposit.entity';
+import { UserPositionEntity } from '../../database/entities/user-position.entity';
 import { BuildPredictionDto } from './dto/build-prediction.dto';
 import { SubmitTransactionDto } from './dto/submit-transaction.dto';
 
@@ -21,6 +22,8 @@ export class TransactionsService {
     private readonly snapshotRepo: Repository<MarketSnapshotEntity>,
     @InjectRepository(DepositEntity)
     private readonly depositRepo: Repository<DepositEntity>,
+    @InjectRepository(UserPositionEntity)
+    private readonly userPositionRepo: Repository<UserPositionEntity>,
   ) {}
 
   async buildPrediction(dto: BuildPredictionDto, jwtUser: any) {
@@ -80,21 +83,24 @@ export class TransactionsService {
       Date.now() - user.spendingWindowDays * 24 * 60 * 60 * 1000,
     );
 
-    const result = await this.depositRepo
-      .createQueryBuilder('d')
-      .select('COALESCE(SUM(d.amount), 0)', 'total')
-      .where('d.user_id = :userId', { userId: user.id })
-      .andWhere('d.created_at >= :windowStart', { windowStart })
-      .andWhere("d.status = 'confirmed'")
+    const result = await this.userPositionRepo
+      .createQueryBuilder('up')
+      .select('COALESCE(SUM(up.amount_staked), 0)', 'total')
+      .where('up.user_id = :userId', { userId: user.id })
+      .andWhere('up.created_at >= :windowStart', { windowStart })
+      .andWhere("up.status = 'confirmed'")
       .getRawOne<{ total: string }>();
 
     const totalSpent = parseFloat(result?.total ?? '0');
-    const remaining = user.spendingLimitUsd - totalSpent;
+    const remaining = Math.max(0, user.spendingLimitUsd - totalSpent);
 
     if (totalSpent + amount > user.spendingLimitUsd) {
       throw new ForbiddenException({
         error: 'SPENDING_LIMIT_EXCEEDED',
+        message: `Spending limit exceeded. Your 30-day limit is ${user.spendingLimitUsd} USDC.`,
         remaining: remaining.toFixed(2),
+        limit: user.spendingLimitUsd.toFixed(2),
+        window_days: user.spendingWindowDays,
       });
     }
   }
