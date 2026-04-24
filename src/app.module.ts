@@ -39,7 +39,7 @@ import { WebsocketModule } from './features/websocket/websocket.module';
       useFactory: (config: ConfigService) => [
         {
           ttl: config.get<number>('THROTTLE_TTL', 60) * 1000,
-          limit: config.get<number>('THROTTLE_LIMIT', 100),
+          limit: config.get<number>('THROTTLE_LIMIT', 5),
         },
       ],
     }),
