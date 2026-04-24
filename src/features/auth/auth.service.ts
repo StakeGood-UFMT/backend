@@ -55,16 +55,72 @@ export class AuthService {
       throw new BadRequestException('Nonce already used');
     }
     try {
+      console.log(`[AuthService] Verifying signature for wallet: ${wallet}`);
+      console.log(`[AuthService] Nonce: ${nonce}`);
+      
       const keypair = Keypair.fromPublicKey(wallet);
 
-      const isValid = keypair.verify(Buffer.from(nonce, 'hex'), Buffer.from(_signature, 'hex'));
+      let signatureBuffer: Buffer;
+      try {
+        if (_signature.length === 128) {
+          signatureBuffer = Buffer.from(_signature, 'hex');
+        } else {
+          signatureBuffer = Buffer.from(_signature, 'base64');
+        }
+      } catch (e) {
+        console.error(`[AuthService] Signature format error: ${e.message}`);
+        throw new UnauthorizedException('Formato de assinatura inválido');
+      }
+
+      console.log(`[AuthService] Signature (hex prefix): ${signatureBuffer.toString('hex').substring(0, 16)}...`);
+
+      const prefix = 'Stellar Signed Message:\n';
+      const msgBuffer = Buffer.from(nonce);
+      const hexBuffer = Buffer.from(nonce, 'hex');
+
+      // Estratégias de verificação
+      const strategies = [
+        { name: 'Raw string', data: msgBuffer },
+        { name: 'Raw string (UPPER)', data: Buffer.from(nonce.toUpperCase()) },
+        { name: 'Hex bytes', data: hexBuffer },
+        
+        // SEP-0053 Prefix
+        { name: 'SEP-0053 Prefix (string)', data: Buffer.concat([Buffer.from(prefix), msgBuffer]) },
+        { name: 'SEP-0053 Prefix (UPPER string)', data: Buffer.concat([Buffer.from(prefix), Buffer.from(nonce.toUpperCase())]) },
+        { name: 'SEP-0053 Prefix (hex)', data: Buffer.concat([Buffer.from(prefix), hexBuffer]) },
+
+        // Hashed strategies (Freighter style)
+        { name: 'SHA256(Raw string)', data: crypto.createHash('sha256').update(msgBuffer).digest() },
+        { name: 'SHA256(Hex bytes)', data: crypto.createHash('sha256').update(hexBuffer).digest() },
+        { name: 'SHA256(Prefix + string)', data: crypto.createHash('sha256').update(Buffer.concat([Buffer.from(prefix), msgBuffer])).digest() },
+        { name: 'SHA256(Prefix + hex)', data: crypto.createHash('sha256').update(Buffer.concat([Buffer.from(prefix), hexBuffer])).digest() },
+        
+        // No newline prefix variations
+        { name: 'Prefix No NL (string)', data: Buffer.concat([Buffer.from('Stellar Signed Message:'), msgBuffer]) },
+        { name: 'SHA256(Prefix No NL + string)', data: crypto.createHash('sha256').update(Buffer.concat([Buffer.from('Stellar Signed Message:'), msgBuffer])).digest() },
+      ];
+
+      let isValid = false;
+      for (const strategy of strategies) {
+        try {
+          if (keypair.verify(strategy.data, signatureBuffer)) {
+            console.log(`[AuthService] Signature verified using strategy: ${strategy.name}`);
+            isValid = true;
+            break;
+          }
+        } catch (e) {
+          // console.log(`[AuthService] Strategy ${strategy.name} check failed`);
+        }
+      }
 
       if (!isValid) {
+        console.error(`[AuthService] All ${strategies.length} verification strategies failed`);
         throw new UnauthorizedException('Assinatura inválida');
       }
 
     } catch (error) {
-
+      console.error(`[AuthService] Verification error:`, error);
+      if (error instanceof UnauthorizedException) throw error;
       throw new UnauthorizedException('Erro na verificação da assinatura');
     }
 
@@ -77,7 +133,7 @@ export class AuthService {
     }
 
     const refreshTokenExpiresAt = new Date();
-    refreshTokenExpiresAt.setDate(refreshTokenExpiresAt.getDay() + 7);
+    refreshTokenExpiresAt.setDate(refreshTokenExpiresAt.getDate() + 7);
 
     const refreshToken = crypto.randomBytes(64).toString('hex');
 
