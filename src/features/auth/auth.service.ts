@@ -9,7 +9,7 @@ import { KycProfileEntity } from '../../database/entities/kyc-profile.entity';
 import { VerifyAuthDto } from './dto/verify-auth.dto';
 import { KycWebhookDto } from './dto/kyc-webhook.dto';
 import { Keypair } from '@stellar/stellar-sdk';
-import { RefreshTokenEntity } from '../../database/entities/refresh_tokens';
+import { RefreshTokenEntity } from '../../database/entities/refresh-token.entity';
 import { StakeGoodGateway } from '../websocket/stakegood.gateway';
 
 @Injectable()

@@ -10,7 +10,7 @@ import { HmacWebhookGuard } from './guards/hmac-webhook.guard';
 import { UserEntity } from '../../database/entities/user.entity';
 import { AuthNonceEntity } from '../../database/entities/auth-nonce.entity';
 import { KycProfileEntity } from '../../database/entities/kyc-profile.entity';
-import { RefreshTokenEntity } from '../../database/entities/refresh_tokens';
+import { RefreshTokenEntity } from '../../database/entities/refresh-token.entity';
 import { WebsocketModule } from '../websocket/websocket.module';
 
 @Module({
