@@ -32,7 +32,7 @@ export class UserEntity {
   @Column({ name: 'private_mode', default: false })
   privateMode: boolean;
 
-  @Column({ name: 'spending_limit_usd', type: 'decimal', precision: 10, scale: 2, default: 5000.00 })
+  @Column({ name: 'spending_limit_usd', type: 'decimal', precision: 10, scale: 2, default: 500.00 })
   spendingLimitUsd: number;
 
   @Column({ name: 'spending_window_days', type: 'int', default: 30 })

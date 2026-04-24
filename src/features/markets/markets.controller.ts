@@ -22,8 +22,22 @@ export class MarketsController {
   getHistory(
     @Param('id') id: string,
     @Query('interval') interval = '1h',
-    @Query('days') days = 7,
+    @Query('days') days?: string,
+    @Query('range') range?: string,
   ) {
-    return this.marketsService.getHistory(id, interval, +days);
+    let daysNum = days ? +days : 7;
+    
+    if (range) {
+      if (range === '1D') daysNum = 1;
+      else if (range === '1W') daysNum = 7;
+      else if (range === 'ALL') daysNum = 365; // Arbitrary large number for ALL
+    }
+
+    return this.marketsService.getHistory(id, interval, daysNum);
+  }
+
+  @Get(':id')
+  findOne(@Param('id') id: string) {
+    return this.marketsService.findOne(id);
   }
 }

@@ -25,6 +25,30 @@ export class MarketEntity {
   @Column({ type: 'enum', enum: ['draft', 'active', 'locked', 'resolved'], default: 'draft' })
   status: MarketStatus;
 
+  @Column({ name: 'image_url', type: 'text', nullable: true })
+  imageUrl?: string;
+
+  @Column({ name: 'resolution_rule', type: 'text', nullable: true })
+  resolutionRule?: string;
+
+  @Column({ name: 'resolution_source', type: 'text', nullable: true })
+  resolutionSource?: string;
+
+  @Column({ name: 'oracle_url', type: 'text', nullable: true })
+  oracleUrl?: string;
+
+  @Column({ name: 'contract_address', length: 56, nullable: true })
+  contractAddress?: string;
+
+  @Column({ name: 'fee_ngo', type: 'decimal', precision: 5, scale: 4, default: 0.02 })
+  feeNgo: number;
+
+  @Column({ name: 'fee_platform', type: 'decimal', precision: 5, scale: 4, default: 0.01 })
+  feePlatform: number;
+
+  @Column({ name: 'fee_gamification', type: 'decimal', precision: 5, scale: 4, default: 0.005 })
+  feeGamification: number;
+
   @Index()
   @Column({ name: 'lock_at' })
   lockAt: Date;
@@ -34,9 +58,6 @@ export class MarketEntity {
 
   @Column({ type: 'enum', enum: ['YES', 'NO'], nullable: true })
   outcome?: MarketOutcome;
-
-  @Column({ name: 'oracle_ref', length: 200, nullable: true })
-  oracleRef?: string;
 
   @Column({ name: 'asset_code', length: 12, nullable: true })
   assetCode?: string;

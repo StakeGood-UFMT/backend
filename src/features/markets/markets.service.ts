@@ -45,11 +45,13 @@ export class MarketsService {
       return {
         id: market.id,
         title: market.title,
+        description: market.description,
         category: market.category,
         status: market.status,
         derived_status: this.derivedStatus(market),
+        image_url: market.imageUrl,
         lock_at: market.lockAt,
-        resolve_at: market.resolveAt,
+        settle_at: market.resolveAt,
         outcome: market.outcome ?? null,
         asset_code: market.assetCode ?? null,
         current_prices: snap ? this.formatPrices(snap) : null,
@@ -74,6 +76,10 @@ export class MarketsService {
       .limit(1)
       .getOne();
 
+    const yesPool = Number(snap?.yesPool || 1);
+    const noPool = Number(snap?.noPool || 1);
+    const totalLiquidity = yesPool + noPool;
+
     return {
       id: market.id,
       title: market.title,
@@ -81,15 +87,26 @@ export class MarketsService {
       category: market.category ?? null,
       status: market.status,
       derived_status: this.derivedStatus(market),
+      image_url: market.imageUrl,
       lock_at: market.lockAt,
-      resolve_at: market.resolveAt,
+      settle_at: market.resolveAt,
       outcome: market.outcome ?? null,
-      oracle_ref: market.oracleRef ?? null,
+      oracle_ref: market.oracleRef ?? null, // V3 field
+      oracle_url: market.oracleUrl ?? null, // BE-21 field
       asset_code: market.assetCode ?? null,
       asset_issuer: market.assetIssuer ?? null,
+      contract_address: market.contractAddress ?? null,
+      fee_ngo: Number(market.feeNgo),
+      fee_platform: Number(market.feePlatform),
+      fee_gamification: Number(market.feeGamification),
+      yes_price: yesPool / totalLiquidity, // Convenience price from main
+      no_price: noPool / totalLiquidity, // Convenience price from main
+      total_liquidity: totalLiquidity.toFixed(2),
       current_prices: snap ? this.formatPrices(snap) : null,
       created_at: market.createdAt,
       updated_at: market.updatedAt,
+      resolution_rule: market.resolutionRule,
+      resolution_source: market.resolutionSource,
     };
   }
 
