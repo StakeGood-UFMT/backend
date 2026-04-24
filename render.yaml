@@ -1,0 +1,47 @@
+services:
+  - type: web
+    name: stakegood-backend
+    env: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm run start:prod
+    healthCheckPath: /api/v1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: DB_HOST
+        fromDatabase:
+          name: stakegood-db
+          property: host
+      - key: DB_PORT
+        fromDatabase:
+          name: stakegood-db
+          property: port
+      - key: DB_USER
+        fromDatabase:
+          name: stakegood-db
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: stakegood-db
+          property: password
+      - key: DB_NAME
+        fromDatabase:
+          name: stakegood-db
+          property: database
+      - key: DATABASE_URL
+        fromDatabase:
+          name: stakegood-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: API_PREFIX
+        value: api/v1
+
+databases:
+  - name: stakegood-db
+    plan: free
+    databaseName: stakegood
+    user: stakegood
