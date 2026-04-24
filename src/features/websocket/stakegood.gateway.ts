@@ -24,6 +24,15 @@ export class StakeGoodGateway implements OnGatewayConnection, OnGatewayDisconnec
     console.log(`Subscribing to market: ${marketId}`);
   }
 
+  @SubscribeMessage('subscribe_user')
+  handleSubscribeUser(client: Socket, userId: string) {
+    client.join(`user:${userId}`);
+  }
+
+  emitKycStatusUpdated(userId: string, payload: { status: string; updatedAt: string }) {
+    this.server.to(`user:${userId}`).emit('kyc_status_updated', payload);
+  }
+
   emitTxConfirmed(userId: string, payload: any) {
     this.server.to(`user:${userId}`).emit('tx_confirmed', payload);
   }

@@ -2,7 +2,7 @@ services:
   postgres:
     image: postgres:15-alpine
     container_name: stakegood_db
-    restart: unless-stopped
+    # restart: unless-stopped
     environment:
       POSTGRES_USER: ${DB_USER:-stakegood}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-stakegood_pass}
