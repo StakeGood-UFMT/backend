@@ -33,7 +33,9 @@ import { AdminModule } from './features/admin/admin.module';
           type: 'postgres',
           entities: [__dirname + '/database/entities/*.entity{.ts,.js}'],
           migrations: [__dirname + '/database/migrations/*{.ts,.js}'],
-          synchronize: config.get('NODE_ENV') !== 'production',
+          synchronize:
+            config.get('DB_SYNCHRONIZE') === 'true' ||
+            config.get('NODE_ENV') !== 'production',
           logging: config.get('NODE_ENV') === 'development',
           ssl:
             config.get('NODE_ENV') === 'production'
