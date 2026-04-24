@@ -21,21 +21,37 @@ import { AdminModule } from './features/admin/admin.module';
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService) => {
-        const url = config.get<string>('DATABASE_URL');
-        return {
+        const url = process.env.DATABASE_URL || config.get<string>('DATABASE_URL');
+
+        if (url) {
+          console.log('📦 Database: Connecting via DATABASE_URL');
+        } else {
+          console.log(`🏠 Database: Connecting via Host: ${config.get('DB_HOST', 'localhost')}`);
+        }
+
+        const dbConfig: any = {
           type: 'postgres',
-          url,
-          host: url ? undefined : config.get('DB_HOST', 'localhost'),
-          port: url ? undefined : config.get<number>('DB_PORT', 5432),
-          username: url ? undefined : config.get('DB_USER', 'stakegood'),
-          password: url ? undefined : config.get('DB_PASSWORD', 'stakegood_pass'),
-          database: url ? undefined : config.get('DB_NAME', 'stakegood_dev'),
           entities: [__dirname + '/database/entities/*.entity{.ts,.js}'],
           migrations: [__dirname + '/database/migrations/*{.ts,.js}'],
           synchronize: config.get('NODE_ENV') !== 'production',
           logging: config.get('NODE_ENV') === 'development',
-          ssl: config.get('NODE_ENV') === 'production' ? { rejectUnauthorized: false } : false,
+          ssl:
+            config.get('NODE_ENV') === 'production'
+              ? { rejectUnauthorized: false }
+              : false,
         };
+
+        if (url) {
+          dbConfig.url = url;
+        } else {
+          dbConfig.host = config.get('DB_HOST', 'localhost');
+          dbConfig.port = config.get<number>('DB_PORT', 5432);
+          dbConfig.username = config.get('DB_USER', 'stakegood');
+          dbConfig.password = config.get('DB_PASSWORD', 'stakegood_pass');
+          dbConfig.database = config.get('DB_NAME', 'stakegood_dev');
+        }
+
+        return dbConfig;
       },
     }),
 
