@@ -25,7 +25,7 @@ export class StakeGoodGateway implements OnGatewayConnection, OnGatewayDisconnec
   }
 
   @SubscribeMessage('subscribe_user')
-  handleSubscribeUser(client: Socket, userId: string) {
+  handleSubscribeUser(client: any, userId: string) {
     client.join(`user:${userId}`);
   }
 

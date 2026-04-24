@@ -40,6 +40,9 @@ export class MarketEntity {
   @Column({ name: 'contract_address', length: 56, nullable: true })
   contractAddress?: string;
 
+  @Column({ name: 'oracle_ref', length: 100, nullable: true })
+  oracleRef?: string;
+
   @Column({ name: 'fee_ngo', type: 'decimal', precision: 5, scale: 4, default: 0.02 })
   feeNgo: number;
 

@@ -11,6 +11,7 @@ import { NgosModule } from './features/ngos/ngos.module';
 import { ImpactModule } from './features/impact/impact.module';
 import { WorkerModule } from './features/worker/worker.module';
 import { WebsocketModule } from './features/websocket/websocket.module';
+import { AdminModule } from './features/admin/admin.module';
 
 @Module({
   imports: [
@@ -51,6 +52,7 @@ import { WebsocketModule } from './features/websocket/websocket.module';
     ImpactModule,
     WorkerModule,
     WebsocketModule,
+    AdminModule,
   ],
   controllers: [AppController],
   providers: [AppService],

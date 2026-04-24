@@ -6,6 +6,9 @@ import { ProcessedTransactionEntity } from '../../database/entities/processed-tr
 import { WorkerCursorEntity } from '../../database/entities/worker-cursor.entity';
 import { NgoEntity } from '../../database/entities/ngo.entity';
 import { MarketEntity } from '../../database/entities/market.entity';
+import { ImpactLedgerEntryEntity } from '../../database/entities/impact-ledger-entry.entity';
+import { TxReceiptEntity } from '../../database/entities/tx-receipt.entity';
+import { StakeGoodGateway } from '../websocket/stakegood.gateway';
 
 const CURSOR_KEY = 'default';
 const BASE_DELAY_MS = 1000;
@@ -41,7 +44,25 @@ interface ParsedMarketCreated {
   createdBy: string;
 }
 
-type ParsedEvent = ParsedNgoRegistered | ParsedNgoDeactivated | ParsedMarketCreated;
+interface ParsedMarketResolved {
+  kind: 'Market:Resolved';
+  marketId: string;
+  outcome: string;
+}
+
+interface ParsedImpactDistributed {
+  kind: 'Impact:Distributed';
+  marketId: string;
+  ngoId: string;
+  amount: string;
+}
+
+type ParsedEvent = 
+  | ParsedNgoRegistered 
+  | ParsedNgoDeactivated 
+  | ParsedMarketCreated 
+  | ParsedMarketResolved 
+  | ParsedImpactDistributed;
 
 @Injectable()
 export class StellarWorkerService implements OnModuleInit, OnModuleDestroy {
@@ -57,6 +78,7 @@ export class StellarWorkerService implements OnModuleInit, OnModuleDestroy {
     private readonly cursorRepo: Repository<WorkerCursorEntity>,
     private readonly dataSource: DataSource,
     private readonly config: ConfigService,
+    private readonly gateway: StakeGoodGateway,
   ) {}
 
   onModuleInit() {
@@ -195,6 +217,23 @@ export class StellarWorkerService implements OnModuleInit, OnModuleDestroy {
       };
     }
 
+    if (namespace === 'Market' && action === 'Resolved') {
+      return {
+        kind: 'Market:Resolved',
+        marketId: body.market_id ?? '',
+        outcome: body.outcome === 1 ? 'YES' : 'NO',
+      };
+    }
+
+    if (namespace === 'Impact' && action === 'Distributed') {
+      return {
+        kind: 'Impact:Distributed',
+        marketId: body.market_id ?? '',
+        ngoId: body.ngo_id ?? '',
+        amount: body.amount ?? '0',
+      };
+    }
+
     return null;
   }
 
@@ -225,12 +264,44 @@ export class StellarWorkerService implements OnModuleInit, OnModuleDestroy {
             createdBy: parsed.createdBy,
           }, ['id']);
           break;
+
+        case 'Market:Resolved':
+          await manager.update(MarketEntity, { id: parsed.marketId }, {
+            status: 'resolved',
+            outcome: parsed.outcome as any,
+          });
+          this.gateway.emitMarketResolved(parsed.marketId, { outcome: parsed.outcome });
+          break;
+
+        case 'Impact:Distributed':
+          await manager.save(ImpactLedgerEntryEntity, {
+            marketId: parsed.marketId,
+            ngoId: parsed.ngoId,
+            amount: parseFloat(parsed.amount) / 10000000, // Stroops to USDC
+            date: new Date(),
+            source: 'fee_pool',
+            txHash: event.txHash,
+          });
+          // Assuming gateway has this method or similar
+          this.gateway.server.emit('impact_distributed', { 
+            marketId: parsed.marketId, 
+            ngoId: parsed.ngoId, 
+            amount: parsed.amount 
+          });
+          break;
       }
 
       await manager.insert(ProcessedTransactionEntity, {
         txHash: event.txHash,
         opIndex: event.opIndex,
         eventType: parsed.kind,
+      });
+
+      await manager.insert(TxReceiptEntity, {
+        txHash: event.txHash,
+        ledger: event.ledger,
+        status: 'success',
+        processedAt: new Date(),
       });
 
       await manager.upsert(WorkerCursorEntity, {

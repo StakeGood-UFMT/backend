@@ -8,7 +8,7 @@ import { AuthNonceEntity } from '../../database/entities/auth-nonce.entity';
 import { KycProfileEntity } from '../../database/entities/kyc-profile.entity';
 import { VerifyAuthDto } from './dto/verify-auth.dto';
 import { KycWebhookDto } from './dto/kyc-webhook.dto';
-import { Keypair } from '@stellar/stellar-base';
+import { Keypair } from '@stellar/stellar-sdk';
 import { RefreshTokenEntity } from '../../database/entities/refresh_tokens';
 import { StakeGoodGateway } from '../websocket/stakegood.gateway';
 
