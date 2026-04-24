@@ -6,9 +6,10 @@ import { UserEntity } from '../../database/entities/user.entity';
 import { MarketEntity } from '../../database/entities/market.entity';
 import { MarketSnapshotEntity } from '../../database/entities/market-snapshot.entity';
 import { DepositEntity } from '../../database/entities/deposit.entity';
+import { UserPositionEntity } from '../../database/entities/user-position.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([UserEntity, MarketEntity, MarketSnapshotEntity, DepositEntity])],
+  imports: [TypeOrmModule.forFeature([UserEntity, MarketEntity, MarketSnapshotEntity, DepositEntity, UserPositionEntity])],
   controllers: [TransactionsController],
   providers: [TransactionsService],
 })
