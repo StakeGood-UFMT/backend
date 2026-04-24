@@ -5,9 +5,11 @@ import { ProcessedTransactionEntity } from '../../database/entities/processed-tr
 import { WorkerCursorEntity } from '../../database/entities/worker-cursor.entity';
 import { NgoEntity } from '../../database/entities/ngo.entity';
 import { MarketEntity } from '../../database/entities/market.entity';
+import { WebsocketModule } from '../websocket/websocket.module';
 
 @Module({
   imports: [
+    WebsocketModule,
     TypeOrmModule.forFeature([
       ProcessedTransactionEntity,
       WorkerCursorEntity,
