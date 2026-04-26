@@ -12,6 +12,7 @@ import { ImpactModule } from './features/impact/impact.module';
 import { WorkerModule } from './features/worker/worker.module';
 import { WebsocketModule } from './features/websocket/websocket.module';
 import { AdminModule } from './features/admin/admin.module';
+import { UsersModule } from './features/users/users.module';
 
 @Module({
   imports: [
@@ -76,6 +77,7 @@ import { AdminModule } from './features/admin/admin.module';
     WorkerModule,
     WebsocketModule,
     AdminModule,
+    UsersModule,
   ],
   controllers: [AppController],
   providers: [AppService],

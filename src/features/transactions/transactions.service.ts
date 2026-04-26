@@ -9,7 +9,13 @@ import { MarketEntity } from '../../database/entities/market.entity';
 import { MarketSnapshotEntity } from '../../database/entities/market-snapshot.entity';
 import { DepositEntity } from '../../database/entities/deposit.entity';
 import { UserPositionEntity } from '../../database/entities/user-position.entity';
+import { ClaimEntity } from '../../database/entities/claim.entity';
+import { NgoEntity } from '../../database/entities/ngo.entity';
+import { VoteEntity } from '../../database/entities/vote.entity';
+import { TxIntentEntity } from '../../database/entities/tx-intent.entity';
 import { BuildPredictionDto } from './dto/build-prediction.dto';
+import { BuildClaimDto } from './dto/build-claim.dto';
+import { BuildVoteDto } from './dto/build-vote.dto';
 import { SubmitTransactionDto } from './dto/submit-transaction.dto';
 
 @Injectable()
@@ -25,6 +31,14 @@ export class TransactionsService {
     private readonly depositRepo: Repository<DepositEntity>,
     @InjectRepository(UserPositionEntity)
     private readonly userPositionRepo: Repository<UserPositionEntity>,
+    @InjectRepository(ClaimEntity)
+    private readonly claimRepo: Repository<ClaimEntity>,
+    @InjectRepository(NgoEntity)
+    private readonly ngoRepo: Repository<NgoEntity>,
+    @InjectRepository(VoteEntity)
+    private readonly voteRepo: Repository<VoteEntity>,
+    @InjectRepository(TxIntentEntity)
+    private readonly txIntentRepo: Repository<TxIntentEntity>,
   ) {}
 
   async buildPrediction(dto: BuildPredictionDto, jwtUser: any) {
@@ -132,6 +146,229 @@ export class TransactionsService {
         implied_probability: impliedProbability.toFixed(3),
         implied_odds: payoutMultiplier.toFixed(2),
         potential_win: `${potentialWin.toFixed(2)} USDC`,
+      },
+    };
+  }
+
+  async buildClaim(dto: BuildClaimDto, jwtUser: any) {
+    const user = await this.userRepo.findOne({ where: { id: jwtUser.userId } });
+    if (!user) throw new NotFoundException('User not found');
+
+    const market = await this.marketRepo.findOne({ where: { id: dto.market_id } });
+    if (!market) throw new NotFoundException('Market not found');
+
+    if (market.status !== 'resolved' && market.status !== 'canceled') {
+      throw new BadRequestException({
+        error: 'MARKET_NOT_CLAIMABLE',
+        message: 'Market must be resolved or canceled to claim rewards.',
+        current_status: market.status,
+      });
+    }
+
+    const position = await this.userPositionRepo.findOne({
+      where: { userId: user.id, marketId: market.id },
+    });
+
+    if (!position) throw new NotFoundException('No position found for this user in this market');
+
+    if (position.status === 'claimed') {
+      throw new ConflictException({
+        error: 'ALREADY_CLAIMED',
+        message: 'Reward for this market has already been claimed.',
+      });
+    }
+
+    const existingClaim = await this.claimRepo.findOne({
+      where: { userId: user.id, marketId: market.id, status: 'pending' },
+    });
+
+    if (existingClaim) {
+      throw new ConflictException({
+        error: 'CLAIM_IN_PROGRESS',
+        message: 'A claim for this market is already pending.',
+        claim_id: existingClaim.id,
+      });
+    }
+
+    const contractId = market.contractAddress || 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4';
+    const marketIdU64 = BigInt(1);
+
+    const op = StellarSdk.Operation.invokeHostFunction({
+      func: StellarSdk.xdr.HostFunction.hostFunctionTypeInvokeContract(
+        new StellarSdk.xdr.InvokeContractArgs({
+          contractAddress: StellarSdk.Address.fromString(contractId).toScAddress(),
+          functionName: 'claim_reward',
+          args: [
+            StellarSdk.nativeToScVal(new StellarSdk.Address(user.primaryWallet)),
+            StellarSdk.nativeToScVal(marketIdU64, { type: 'u64' }),
+          ],
+        }),
+      ),
+      auth: [],
+    });
+
+    const tx = new StellarSdk.TransactionBuilder(
+      new StellarSdk.Account(user.primaryWallet, '0'),
+      { fee: '10000', networkPassphrase: StellarSdk.Networks.TESTNET },
+    )
+      .addOperation(op)
+      .setTimeout(StellarSdk.TimeoutInfinite)
+      .build();
+
+    const xdr = tx.toXDR();
+
+    const claim = this.claimRepo.create({
+      userId: user.id,
+      marketId: market.id,
+      positionId: position.id,
+      xdr,
+      status: 'pending',
+    });
+    await this.claimRepo.save(claim);
+
+    return {
+      xdr,
+      claimId: claim.id,
+      summary: {
+        action: 'claim_reward',
+        market: { id: market.id, title: market.title, status: market.status },
+        outcome: position.outcome,
+        amount_staked: `${position.amountStaked} USDC`,
+      },
+    };
+  }
+
+  async buildVote(dto: BuildVoteDto, jwtUser: any) {
+    const user = await this.userRepo.findOne({ where: { id: jwtUser.userId } });
+    if (!user) throw new NotFoundException('User not found');
+
+    if (user.kycStatus !== 'verified') {
+      throw new ForbiddenException({
+        error: 'KYC_REQUIRED',
+        kyc_status: user.kycStatus,
+        message: 'Verified KYC is required to vote.',
+      });
+    }
+
+    const market = await this.marketRepo.findOne({ where: { id: dto.market_id } });
+    if (!market) throw new NotFoundException('Market not found');
+
+    if (market.status !== 'resolved') {
+      throw new BadRequestException({
+        error: 'MARKET_NOT_RESOLVED',
+        message: 'Voting is only allowed on resolved markets.',
+        current_status: market.status,
+      });
+    }
+
+    const position = await this.userPositionRepo.findOne({
+      where: { userId: user.id, marketId: market.id, status: 'confirmed' },
+    });
+
+    if (!position) {
+      throw new ForbiddenException({
+        error: 'VOTE_NOT_ELIGIBLE',
+        message: 'You do not have a confirmed position in this market.',
+      });
+    }
+
+    if (position.outcome !== market.outcome) {
+      throw new ForbiddenException({
+        error: 'VOTE_NOT_ELIGIBLE',
+        message: 'Only winners of the market outcome can vote.',
+        your_outcome: position.outcome,
+        winning_outcome: market.outcome,
+      });
+    }
+
+    const existingVote = await this.voteRepo.findOne({
+      where: { userId: user.id, marketId: market.id },
+    });
+
+    if (existingVote) {
+      throw new ConflictException({
+        error: 'ALREADY_VOTED',
+        message: 'You have already voted in this market.',
+        vote_id: existingVote.id,
+      });
+    }
+
+    const ngo = await this.ngoRepo.findOne({ where: { id: dto.ngo_id } });
+    if (!ngo) throw new NotFoundException('NGO not found');
+
+    const amountStroops = BigInt(Math.floor(Number(position.amountStaked) * 10_000_000));
+    const credits = Math.floor(Math.sqrt(Number(amountStroops)));
+    const cost = dto.allocated_votes * dto.allocated_votes;
+
+    if (cost > credits) {
+      throw new ForbiddenException({
+        error: 'INSUFFICIENT_CREDITS',
+        message: `Insufficient quadratic credits. Cost is ${cost} but you only have ${credits} credits.`,
+        credits,
+        cost,
+        allocated_votes: dto.allocated_votes,
+      });
+    }
+
+    const contractId = market.contractAddress || 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4';
+    const marketIdU64 = BigInt(1);
+    const allocatedVotesU32 = dto.allocated_votes;
+
+    const op = StellarSdk.Operation.invokeHostFunction({
+      func: StellarSdk.xdr.HostFunction.hostFunctionTypeInvokeContract(
+        new StellarSdk.xdr.InvokeContractArgs({
+          contractAddress: StellarSdk.Address.fromString(contractId).toScAddress(),
+          functionName: 'cast_philanthropic_vote',
+          args: [
+            StellarSdk.nativeToScVal(new StellarSdk.Address(user.primaryWallet)),
+            StellarSdk.nativeToScVal(marketIdU64, { type: 'u64' }),
+            StellarSdk.nativeToScVal(ngo.walletAddress),
+            StellarSdk.nativeToScVal(allocatedVotesU32, { type: 'u32' }),
+          ],
+        }),
+      ),
+      auth: [],
+    });
+
+    const tx = new StellarSdk.TransactionBuilder(
+      new StellarSdk.Account(user.primaryWallet, '0'),
+      { fee: '10000', networkPassphrase: StellarSdk.Networks.TESTNET },
+    )
+      .addOperation(op)
+      .setTimeout(StellarSdk.TimeoutInfinite)
+      .build();
+
+    const xdr = tx.toXDR();
+
+    const intent = this.txIntentRepo.create({
+      adminId: user.id,
+      action: 'cast_philanthropic_vote',
+      xdr,
+      status: 'pending',
+    });
+    await this.txIntentRepo.save(intent);
+
+    const vote = this.voteRepo.create({
+      userId: user.id,
+      marketId: market.id,
+      ngoId: ngo.id,
+      allocatedVotes: dto.allocated_votes,
+      creditsUsed: cost,
+      txIntentId: intent.id,
+      status: 'pending',
+    });
+    await this.voteRepo.save(vote);
+
+    return {
+      xdr,
+      txHash: tx.hash().toString('hex'),
+      summary: {
+        action: 'cast_philanthropic_vote',
+        market: { id: market.id, title: market.title },
+        ngo: { id: ngo.id, name: ngo.name },
+        allocated_votes: dto.allocated_votes,
+        credits_used: cost,
+        credits_available: credits,
       },
     };
   }

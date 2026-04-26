@@ -86,6 +86,9 @@
     "transform": {
       "^.+\\.(t|j)s$": "ts-jest"
     },
+    "moduleNameMapper": {
+      "^@stellar/stellar-sdk$": "<rootDir>/__mocks__/@stellar/stellar-sdk.ts"
+    },
     "collectCoverageFrom": [
       "**/*.(t|j)s"
     ],

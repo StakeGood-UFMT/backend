@@ -3,7 +3,7 @@ import {
   UpdateDateColumn, Index,
 } from 'typeorm';
 
-export type MarketStatus = 'draft' | 'active' | 'locked' | 'resolved';
+export type MarketStatus = 'draft' | 'active' | 'locked' | 'resolved' | 'canceled';
 export type MarketOutcome = 'YES' | 'NO';
 
 @Entity('markets')
@@ -22,7 +22,7 @@ export class MarketEntity {
   category?: string;
 
   @Index()
-  @Column({ type: 'enum', enum: ['draft', 'active', 'locked', 'resolved'], default: 'draft' })
+  @Column({ type: 'enum', enum: ['draft', 'active', 'locked', 'resolved', 'canceled'], default: 'draft' })
   status: MarketStatus;
 
   @Column({ name: 'image_url', type: 'text', nullable: true })
