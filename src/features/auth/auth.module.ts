@@ -12,6 +12,7 @@ import { AuthNonceEntity } from '../../database/entities/auth-nonce.entity';
 import { KycProfileEntity } from '../../database/entities/kyc-profile.entity';
 import { RefreshTokenEntity } from '../../database/entities/refresh-token.entity';
 import { WebsocketModule } from '../websocket/websocket.module';
+import { TwoFactorService } from './two-factor.service';
 
 @Module({
   imports: [
@@ -33,7 +34,7 @@ import { WebsocketModule } from '../websocket/websocket.module';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, HmacWebhookGuard],
-  exports: [AuthService, JwtModule],
+  providers: [AuthService, JwtStrategy, HmacWebhookGuard, TwoFactorService],
+  exports: [AuthService, JwtModule, TwoFactorService],
 })
 export class AuthModule {}

@@ -16,6 +16,7 @@ import {
   LinkWalletChallengeDto,
   LinkWalletVerifyDto,
 } from './dto/settings.dto';
+import { TwoFactorService } from '../auth/two-factor.service';
 
 @Injectable()
 export class SettingsService {
@@ -24,7 +25,11 @@ export class SettingsService {
     private readonly userRepo: Repository<UserEntity>,
     @InjectRepository(UserDetailsEntity)
     private readonly detailsRepo: Repository<UserDetailsEntity>,
+    private readonly twoFactorService: TwoFactorService,
   ) {}
+
+  /** In-memory store for pending 2FA secrets during setup. */
+  private readonly pending2faSecrets = new Map<string, string>();
 
   // ─────────────────────────────────────────────
   //  Internal helpers
@@ -373,5 +378,94 @@ export class SettingsService {
   async get2faStatus(userId: string) {
     const details = await this.getOrCreate(userId);
     return { totpEnabled: details.totpEnabled };
+  }
+
+  /**
+   * Generates a new TOTP secret and QR code for the user.
+   * The secret is temporarily stored in memory until verified.
+   */
+  async initiate2fa(userId: string) {
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+
+    const details = await this.getOrCreate(userId);
+    if (details.totpEnabled) {
+      throw new ConflictException('2FA is already enabled');
+    }
+
+    const secret = this.twoFactorService.generateSecret();
+    const qrCode = await this.twoFactorService.generateQrCode(
+      user.primaryWallet,
+      secret,
+    );
+
+    // Store in memory for verification step (expires in 10 mins)
+    this.pending2faSecrets.set(userId, secret);
+    setTimeout(() => this.pending2faSecrets.delete(userId), 10 * 60 * 1000);
+
+    return {
+      qrCode,
+      secret, // Providing the secret string as well for manual entry
+    };
+  }
+
+  /**
+   * Verifies the first token and enables 2FA for the user.
+   * Only at this point is the secret encrypted and persisted.
+   */
+  async verifyAndEnable2fa(userId: string, token: string) {
+    const secret = this.pending2faSecrets.get(userId);
+    if (!secret) {
+      throw new BadRequestException(
+        '2FA setup not initiated or session expired. Please try again.',
+      );
+    }
+
+    const isValid = this.twoFactorService.verifyToken(secret, token);
+    if (!isValid) {
+      throw new BadRequestException('Invalid verification code');
+    }
+
+    const encryptedSecret = this.twoFactorService.encryptSecret(secret);
+    const details = await this.getOrCreate(userId);
+
+    await this.detailsRepo.update(details.id, {
+      totpSecret: encryptedSecret,
+      totpEnabled: true,
+    });
+
+    this.pending2faSecrets.delete(userId);
+
+    return {
+      success: true,
+      message: 'Two-factor authentication enabled successfully',
+    };
+  }
+
+  /**
+   * Disables 2FA for the user. Requires a valid token for security.
+   */
+  async disable2fa(userId: string, token: string) {
+    const details = await this.getOrCreate(userId);
+    if (!details.totpEnabled || !details.totpSecret) {
+      throw new BadRequestException('2FA is not enabled');
+    }
+
+    const secret = this.twoFactorService.decryptSecret(details.totpSecret);
+    const isValid = this.twoFactorService.verifyToken(secret, token);
+
+    if (!isValid) {
+      throw new BadRequestException('Invalid verification code');
+    }
+
+    await this.detailsRepo.update(details.id, {
+      totpSecret: undefined,
+      totpEnabled: false,
+    });
+
+    return {
+      success: true,
+      message: 'Two-factor authentication disabled successfully',
+    };
   }
 }

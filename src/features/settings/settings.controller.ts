@@ -118,22 +118,32 @@ export class SettingsController {
 
   /**
    * POST /api/v1/users/me/2fa/enable
-   * Initiates 2FA setup.
+   * Initiates 2FA setup by generating a secret and QR code.
    */
   @Post('2fa/enable')
+  @HttpCode(HttpStatus.OK)
   enable2fa(@Request() req: any) {
-    // Stub for v2
-    return { qrCode: 'stub_qr_code', secret: 'stub_secret' };
+    return this.settingsService.initiate2fa(req.user.userId);
   }
 
   /**
    * POST /api/v1/users/me/2fa/verify
-   * Completes 2FA setup.
+   * Completes 2FA setup by verifying the first token.
    */
   @Post('2fa/verify')
-  verify2fa(@Request() req: any, @Body() dto: any) {
-    // Stub for v2
-    return { success: true };
+  @HttpCode(HttpStatus.OK)
+  verify2fa(@Request() req: any, @Body() dto: { token: string }) {
+    return this.settingsService.verifyAndEnable2fa(req.user.userId, dto.token);
+  }
+
+  /**
+   * POST /api/v1/users/me/2fa/disable
+   * Disables 2FA. Requires a valid token.
+   */
+  @Post('2fa/disable')
+  @HttpCode(HttpStatus.OK)
+  disable2fa(@Request() req: any, @Body() dto: { token: string }) {
+    return this.settingsService.disable2fa(req.user.userId, dto.token);
   }
 
   /**
