@@ -69,6 +69,7 @@ import { LegalModule } from './features/legal/legal.module';
           type: 'postgres' as const,
           entities: [__dirname + '/database/entities/*.entity{.ts,.js}'],
           migrations: [__dirname + '/database/migrations/*{.ts,.js}'],
+          autoLoadEntities: true,
           synchronize,
           logging,
           ssl,
