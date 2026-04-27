@@ -52,7 +52,40 @@ export class KeeperService {
     }
   }
 
-  private async submitBatchBump(marketIds: bigint[]) {
+  async getEligibleMarkets(): Promise<MarketEntity[]> {
+    return this.marketRepo.find({
+      where: {
+        status: In(['active', 'locked']),
+      },
+      order: {
+        lockAt: 'ASC',
+      },
+    });
+  }
+
+  async batchBumpTTL(marketIds: string[]): Promise<{ hash: string }> {
+    if (!marketIds || marketIds.length === 0) {
+      throw new Error('Nenhum ID de mercado fornecido para bump.');
+    }
+
+    const bigIntIds = marketIds.map((id) => {
+      // Find the market to get its onChainId
+      return this.marketRepo
+        .findOne({ where: { id }, select: ['onChainId'] })
+        .then((m) => {
+          if (!m || !m.onChainId) {
+            throw new Error(`Mercado ${id} não possui onChainId.`);
+          }
+          return BigInt(m.onChainId);
+        });
+    });
+
+    const resolvedIds = await Promise.all(bigIntIds);
+    const hash = await this.submitBatchBump(resolvedIds);
+    return { hash };
+  }
+
+  private async submitBatchBump(marketIds: bigint[]): Promise<string> {
     const horizonUrl = this.config.get<string>(
       'STELLAR_HORIZON_URL',
       'https://horizon-testnet.stellar.org',
@@ -109,5 +142,6 @@ export class KeeperService {
 
     const result = await server.submitTransaction(tx);
     this.logger.log(`Transação enviada: ${result.hash}`);
+    return result.hash;
   }
 }
