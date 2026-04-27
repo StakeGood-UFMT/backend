@@ -88,9 +88,7 @@ export class TransactionsService {
     const contractId = market.contractAddress || 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4'; // Placeholder if not set
     const amountStroops = BigInt(Math.floor(amount * 10000000)); // 7 decimals for USDC/SAC
     
-    // TODO: Maintain a numeric mapping for market_id (u64) in the database
-    // For now using 1 as a placeholder for the contract-side market ID
-    const marketIdU64 = BigInt(1); 
+    const marketIdU64 = BigInt(market.onChainId || 0); 
     const outcomeU32 = dto.outcome === 'YES' ? 1 : 2;
 
     const op = StellarSdk.Operation.invokeHostFunction({

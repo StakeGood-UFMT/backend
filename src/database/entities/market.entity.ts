@@ -22,6 +22,10 @@ export class MarketEntity {
   category?: string;
 
   @Index()
+  @Column({ name: 'on_chain_id', type: 'bigint', nullable: true })
+  onChainId?: string; // Using string to handle BigInt safely in JSON/TypeORM
+
+  @Index()
   @Column({ type: 'enum', enum: ['draft', 'active', 'locked', 'resolved'], default: 'draft' })
   status: MarketStatus;
 

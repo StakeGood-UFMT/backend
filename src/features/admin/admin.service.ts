@@ -71,7 +71,7 @@ export class AdminService {
     if (!market) throw new NotFoundException('Market not found');
 
     const contractId = market.contractAddress || this.config.get<string>('STELLAR_CONTRACT_ID', 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4');
-    const marketIdU64 = BigInt(1); // Should be mapped from market.id in a real scenario
+    const marketIdU64 = BigInt(market.onChainId || 0);
     const outcomeU32 = outcome === 'YES' ? 1 : 2;
 
     const op = StellarSdk.Operation.invokeHostFunction({
@@ -115,7 +115,7 @@ export class AdminService {
     if (!market) throw new NotFoundException('Market not found');
 
     const contractId = market.contractAddress || this.config.get<string>('STELLAR_CONTRACT_ID', 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4');
-    const marketIdU64 = BigInt(1);
+    const marketIdU64 = BigInt(market.onChainId || 0);
 
     const op = StellarSdk.Operation.invokeHostFunction({
       func: StellarSdk.xdr.HostFunction.hostFunctionTypeInvokeContract(
@@ -156,7 +156,7 @@ export class AdminService {
     if (!market) throw new NotFoundException('Market not found');
 
     const contractId = market.contractAddress || this.config.get<string>('STELLAR_CONTRACT_ID', 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4');
-    const marketIdU64 = BigInt(1);
+    const marketIdU64 = BigInt(market.onChainId || 0);
 
     const op = StellarSdk.Operation.invokeHostFunction({
       func: StellarSdk.xdr.HostFunction.hostFunctionTypeInvokeContract(
