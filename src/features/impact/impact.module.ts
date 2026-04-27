@@ -6,7 +6,7 @@ import { ExportProcessor } from './export.processor';
 import { ImpactExportService } from './impact-export.service';
 import { ImpactLedgerEntryEntity } from '../../database/entities/impact-ledger-entry.entity';
 import { NgoEntity } from '../../database/entities/ngo.entity';
-import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ConfigModule } from '@nestjs/config';
 import { BullModule, getQueueToken } from '@nestjs/bullmq';
 
 @Module({

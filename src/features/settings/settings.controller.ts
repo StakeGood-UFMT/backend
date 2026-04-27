@@ -11,6 +11,7 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
+import type { Request as ExpressRequest } from 'express';
 import { AuthGuard } from '@nestjs/passport';
 import { SettingsService } from './settings.service';
 import {

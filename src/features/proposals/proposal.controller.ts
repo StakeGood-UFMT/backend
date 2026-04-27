@@ -10,6 +10,7 @@ import {
   Request,
   Query,
 } from '@nestjs/common';
+import type { Request as ExpressRequest } from 'express';
 import { AuthGuard } from '@nestjs/passport';
 import { ProposalService } from './proposal.service';
 import { CreateProposalDto } from './dto/create-proposal.dto';

@@ -45,11 +45,10 @@ export class KeeperService {
       await this.submitBatchBump(marketIds);
 
       this.logger.log('Job de Keeper finalizado com sucesso.');
-    } catch (error) {
-      this.logger.error(
-        `Erro ao executar job de Keeper: ${error.message}`,
-        error.stack,
-      );
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      const stack = error instanceof Error ? error.stack : undefined;
+      this.logger.error(`Erro ao executar job de Keeper: ${msg}`, stack);
     }
   }
 

@@ -7,6 +7,7 @@ import {
   ParseUUIDPipe,
   Request,
 } from '@nestjs/common';
+import type { Request as ExpressRequest } from 'express';
 import { AuthGuard } from '@nestjs/passport';
 import { AdminService } from './admin.service';
 import { RolesGuard } from '../auth/guards/roles.guard';

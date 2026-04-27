@@ -6,14 +6,20 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
+import type { Request as ExpressRequest } from 'express';
 
 @Injectable()
 export class HmacWebhookGuard implements CanActivate {
   constructor(private readonly config: ConfigService) {}
 
   canActivate(context: ExecutionContext): boolean {
-    const req = context.switchToHttp().getRequest();
-    const signature = req.headers['x-sumsub-signature'] as string | undefined;
+    const req = context.switchToHttp().getRequest<
+      ExpressRequest & {
+        rawBody?: Buffer;
+        headers: Record<string, string | undefined>;
+      }
+    >();
+    const signature = req.headers['x-sumsub-signature'];
     const rawBody: Buffer | undefined = req.rawBody;
     const secret = this.config.get<string>('SUMSUB_WEBHOOK_SECRET');
 
