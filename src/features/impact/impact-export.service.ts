@@ -24,7 +24,9 @@ export class ImpactExportService {
   async generateExport(options: ExportOptions) {
     const { format, from, to, ngoId, jobId } = options;
 
-    const query = this.ledgerRepo.createQueryBuilder('e').orderBy('e.date', 'DESC');
+    const query = this.ledgerRepo
+      .createQueryBuilder('e')
+      .orderBy('e.date', 'DESC');
 
     if (from) query.andWhere('e.date >= :from', { from: new Date(from) });
     if (to) query.andWhere('e.date <= :to', { to: new Date(to) });
@@ -50,7 +52,8 @@ export class ImpactExportService {
       fileContent = stringify(data, { header: true });
       fileName = `${jobId}.csv`;
     } else {
-      fileContent = `PDF Export for ${jobId}\n\n` + JSON.stringify(entries, null, 2);
+      fileContent =
+        `PDF Export for ${jobId}\n\n` + JSON.stringify(entries, null, 2);
       fileName = `${jobId}.pdf`;
     }
 

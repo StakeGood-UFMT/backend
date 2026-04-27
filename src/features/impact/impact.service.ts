@@ -33,7 +33,8 @@ export class ImpactService {
     private readonly exportService: ImpactExportService,
     private readonly configService: ConfigService,
   ) {
-    this.redisEnabled = this.configService.get('ENABLE_REDIS', 'false') === 'true';
+    this.redisEnabled =
+      this.configService.get('ENABLE_REDIS', 'false') === 'true';
   }
 
   async getLedger(options: LedgerOptions) {
