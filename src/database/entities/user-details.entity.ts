@@ -79,6 +79,14 @@ export class UserDetailsEntity {
   @Column({ name: 'totp_enabled', default: false })
   totpEnabled: boolean;
 
+  /** Version of terms accepted by the user. */
+  @Column({ name: 'accepted_terms_version', nullable: true })
+  acceptedTermsVersion?: string;
+
+  /** When the user accepted the terms. */
+  @Column({ name: 'accepted_terms_at', nullable: true })
+  acceptedTermsAt?: Date;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

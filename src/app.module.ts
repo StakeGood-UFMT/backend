@@ -19,6 +19,7 @@ import { BullModule } from '@nestjs/bullmq';
 import { ProposalModule } from './features/proposals/proposals.module';
 import { SettingsModule } from './features/settings/settings.module';
 import { LeaderboardModule } from './features/leaderboard/leaderboard.module';
+import { LegalModule } from './features/legal/legal.module';
 
 @Module({
   imports: [
@@ -117,6 +118,7 @@ import { LeaderboardModule } from './features/leaderboard/leaderboard.module';
     ProposalModule,
     SettingsModule,
     LeaderboardModule,
+    LegalModule,
   ],
   controllers: [AppController],
   providers: [AppService],
