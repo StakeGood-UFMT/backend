@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { UserRole } from '../../../database/entities/user.entity';
+import type { Request as ExpressRequest } from 'express';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
@@ -21,9 +22,13 @@ export class RolesGuard implements CanActivate {
       return true;
     }
 
-    const { user } = context.switchToHttp().getRequest();
+    const req = context
+      .switchToHttp()
+      .getRequest<ExpressRequest & { user?: { role?: UserRole } }>();
 
-    if (!user || !requiredRoles.includes(user.role)) {
+    const user = req.user;
+
+    if (!user || !user.role || !requiredRoles.includes(user.role)) {
       throw new ForbiddenException('Insufficient permissions');
     }
 

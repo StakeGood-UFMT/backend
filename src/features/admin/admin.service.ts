@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  NotFoundException,
-  BadRequestException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { MarketEntity } from '../../database/entities/market.entity';
@@ -12,6 +8,12 @@ import { ImpactLedgerEntryEntity } from '../../database/entities/impact-ledger-e
 import { CreateMarketDto } from './dto/create-market.dto';
 import * as StellarSdk from '@stellar/stellar-sdk';
 import { ConfigService } from '@nestjs/config';
+
+interface AdminContext {
+  userId: string;
+  wallet: string;
+  [key: string]: any;
+}
 
 @Injectable()
 export class AdminService {
@@ -28,7 +30,7 @@ export class AdminService {
     private readonly config: ConfigService,
   ) {}
 
-  async createMarket(dto: CreateMarketDto, admin: any) {
+  async createMarket(dto: CreateMarketDto, admin: AdminContext) {
     const contractId = this.config.get(
       'STELLAR_CONTRACT_ID',
       'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4',
@@ -78,7 +80,7 @@ export class AdminService {
     return { xdr, action: 'CREATE_MARKET' };
   }
 
-  async resolveMarket(id: string, outcome: 'YES' | 'NO', admin: any) {
+  async resolveMarket(id: string, outcome: 'YES' | 'NO', admin: AdminContext) {
     const market = await this.marketRepo.findOne({ where: { id } });
     if (!market) throw new NotFoundException('Market not found');
 
@@ -128,7 +130,7 @@ export class AdminService {
     return { xdr, action: 'RESOLVE_MARKET' };
   }
 
-  async cancelMarket(id: string, admin: any) {
+  async cancelMarket(id: string, admin: AdminContext) {
     const market = await this.marketRepo.findOne({ where: { id } });
     if (!market) throw new NotFoundException('Market not found');
 
@@ -173,7 +175,7 @@ export class AdminService {
     return { xdr, action: 'CANCEL_MARKET' };
   }
 
-  async distributeImpact(id: string, admin: any) {
+  async distributeImpact(id: string, admin: AdminContext) {
     const market = await this.marketRepo.findOne({ where: { id } });
     if (!market) throw new NotFoundException('Market not found');
 
