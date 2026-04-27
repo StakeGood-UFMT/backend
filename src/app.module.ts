@@ -14,6 +14,7 @@ import { WebsocketModule } from './features/websocket/websocket.module';
 import { AdminModule } from './features/admin/admin.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { KeeperModule } from './features/keeper/keeper.module';
+import { NotificationsModule } from './features/notifications/notifications.module';
 import { BullModule } from '@nestjs/bullmq';
 
 @Module({
@@ -99,6 +100,7 @@ import { BullModule } from '@nestjs/bullmq';
     WebsocketModule,
     AdminModule,
     KeeperModule,
+    NotificationsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

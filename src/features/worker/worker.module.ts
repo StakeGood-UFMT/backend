@@ -6,10 +6,12 @@ import { WorkerCursorEntity } from '../../database/entities/worker-cursor.entity
 import { NgoEntity } from '../../database/entities/ngo.entity';
 import { MarketEntity } from '../../database/entities/market.entity';
 import { WebsocketModule } from '../websocket/websocket.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
     WebsocketModule,
+    NotificationsModule,
     TypeOrmModule.forFeature([
       ProcessedTransactionEntity,
       WorkerCursorEntity,

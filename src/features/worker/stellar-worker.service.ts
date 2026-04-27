@@ -13,7 +13,10 @@ import { NgoEntity } from '../../database/entities/ngo.entity';
 import { MarketEntity } from '../../database/entities/market.entity';
 import { ImpactLedgerEntryEntity } from '../../database/entities/impact-ledger-entry.entity';
 import { TxReceiptEntity } from '../../database/entities/tx-receipt.entity';
+import { UserEntity } from '../../database/entities/user.entity';
+import { UserPositionEntity } from '../../database/entities/user-position.entity';
 import { StakeGoodGateway } from '../websocket/stakegood.gateway';
+import { NotificationService } from '../notifications/notification.service';
 
 const CURSOR_KEY = 'default';
 const BASE_DELAY_MS = 1000;
@@ -84,6 +87,7 @@ export class StellarWorkerService implements OnModuleInit, OnModuleDestroy {
     private readonly dataSource: DataSource,
     private readonly config: ConfigService,
     private readonly gateway: StakeGoodGateway,
+    private readonly notificationService: NotificationService,
   ) {}
 
   onModuleInit() {
@@ -298,9 +302,26 @@ export class StellarWorkerService implements OnModuleInit, OnModuleDestroy {
             },
             ['id'],
           );
+
+          // Notify creator
+          const creator = await manager.findOne(UserEntity, {
+            where: { primaryWallet: parsed.createdBy },
+          });
+          if (creator) {
+            await this.notificationService.createNotification(
+              creator.id,
+              `Your market "${parsed.title}" has been successfully created!`,
+              'market_created',
+            );
+          }
           break;
 
         case 'Market:Resolved':
+          const resolvedMarket = await manager.findOne(MarketEntity, {
+            where: { id: parsed.marketId },
+          });
+          const title = resolvedMarket?.title || parsed.marketId;
+
           await manager.update(
             MarketEntity,
             { id: parsed.marketId },
@@ -312,6 +333,24 @@ export class StellarWorkerService implements OnModuleInit, OnModuleDestroy {
           this.gateway.emitMarketResolved(parsed.marketId, {
             outcome: parsed.outcome,
           });
+
+          // Notify participants
+          const positions = await manager.find(UserPositionEntity, {
+            where: { marketId: parsed.marketId },
+          });
+
+          for (const pos of positions) {
+            const isWinner = pos.outcome === parsed.outcome;
+            const message = isWinner
+              ? `Congratulations! You won on market "${title}".`
+              : `The market "${title}" has been resolved. You lost your stake.`;
+
+            await this.notificationService.createNotification(
+              pos.userId,
+              message,
+              isWinner ? 'profit_credited' : 'market_resolved',
+            );
+          }
           break;
 
         case 'Impact:Distributed':
