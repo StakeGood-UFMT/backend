@@ -13,7 +13,9 @@ export class ExportProcessor extends WorkerHost {
     super();
   }
 
-  async process(job: Job<ExportOptions, ExportJobResult, string>): Promise<ExportJobResult> {
+  async process(
+    job: Job<ExportOptions, ExportJobResult, string>,
+  ): Promise<ExportJobResult> {
     return this.exportService.generateExport(job.data);
   }
 }
