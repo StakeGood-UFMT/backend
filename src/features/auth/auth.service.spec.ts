@@ -5,7 +5,7 @@ import { AuthService } from './auth.service';
 import { UserEntity } from '../../database/entities/user.entity';
 import { AuthNonceEntity } from '../../database/entities/auth-nonce.entity';
 import { KycProfileEntity } from '../../database/entities/kyc-profile.entity';
-import { RefreshTokenEntity } from '../../database/entities/refresh_tokens';
+import { RefreshTokenEntity } from '../../database/entities/refresh-token.entity';
 import { StakeGoodGateway } from '../websocket/stakegood.gateway';
 
 const mockUser = (overrides: Partial<UserEntity> = {}): UserEntity =>

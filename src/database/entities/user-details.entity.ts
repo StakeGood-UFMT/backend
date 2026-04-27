@@ -1,0 +1,87 @@
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  Index,
+  OneToOne,
+  JoinColumn,
+} from 'typeorm';
+import { UserEntity } from './user.entity';
+
+/**
+ * UserDetailsEntity – extended preferences that live in a separate table
+ * to keep UserEntity lean (1-to-1 relationship, shared userId PK pattern).
+ *
+ * Covers:
+ *   • public_visibility    – show/hide the user on the leaderboard
+ *   • spending_limit_usd   – self-imposed spending cap
+ *   • linked_wallets       – JSON array of extra Stellar addresses linked via
+ *                            signature challenge (BE-16 wallet linking)
+ *   • totp_secret          – encrypted TOTP secret for 2FA (v2, optional)
+ *   • totp_enabled         – whether 2FA is active
+ */
+@Entity('user_details')
+export class UserDetailsEntity {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Index({ unique: true })
+  @Column({ name: 'user_id' })
+  userId: string;
+
+  @OneToOne(() => UserEntity)
+  @JoinColumn({ name: 'user_id' })
+  user: UserEntity;
+
+  /** Show this user on the public leaderboard. */
+  @Column({ name: 'public_visibility', default: true })
+  publicVisibility: boolean;
+
+  /** Private mode hides positions from other users' views. */
+  @Column({ name: 'private_mode', default: false })
+  privateMode: boolean;
+
+  /** Self-imposed max spend in USD per window. */
+  @Column({
+    name: 'spending_limit_usd',
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
+    default: 500.0,
+  })
+  spendingLimitUsd: number;
+
+  /** Rolling window for the spending limit, in days. */
+  @Column({ name: 'spending_window_days', type: 'int', default: 30 })
+  spendingWindowDays: number;
+
+  /**
+   * Array of secondary Stellar wallets linked by the user via
+   * signature-challenge (each element: { address: string, linkedAt: ISO8601 }).
+   */
+  @Column({
+    name: 'linked_wallets',
+    type: 'jsonb',
+    default: [],
+  })
+  linkedWallets: Array<{ address: string; linkedAt: string }>;
+
+  /**
+   * TOTP secret stored encrypted at rest (v2 feature).
+   * null means 2FA has never been configured.
+   */
+  @Column({ name: 'totp_secret', nullable: true, select: false })
+  totpSecret?: string;
+
+  /** Whether 2FA is currently active for this user. */
+  @Column({ name: 'totp_enabled', default: false })
+  totpEnabled: boolean;
+
+  @CreateDateColumn({ name: 'created_at' })
+  createdAt: Date;
+
+  @UpdateDateColumn({ name: 'updated_at' })
+  updatedAt: Date;
+}
