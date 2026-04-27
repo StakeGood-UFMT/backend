@@ -12,10 +12,13 @@ import { ImpactModule } from './features/impact/impact.module';
 import { WorkerModule } from './features/worker/worker.module';
 import { WebsocketModule } from './features/websocket/websocket.module';
 import { AdminModule } from './features/admin/admin.module';
+import { ScheduleModule } from '@nestjs/schedule';
+import { KeeperModule } from './features/keeper/keeper.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    ScheduleModule.forRoot(),
 
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
@@ -76,6 +79,7 @@ import { AdminModule } from './features/admin/admin.module';
     WorkerModule,
     WebsocketModule,
     AdminModule,
+    KeeperModule,
   ],
   controllers: [AppController],
   providers: [AppService],

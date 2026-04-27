@@ -37,7 +37,7 @@ interface ParsedNgoDeactivated {
 
 interface ParsedMarketCreated {
   kind: 'Market:Created';
-  contractId: string;
+  marketId: string;
   title: string;
   lockAt: Date;
   resolveAt: Date;
@@ -209,7 +209,7 @@ export class StellarWorkerService implements OnModuleInit, OnModuleDestroy {
     if (namespace === 'Market' && action === 'Created') {
       return {
         kind: 'Market:Created',
-        contractId: body.contract_id ?? '',
+        marketId: body.market_id ?? '',
         title: body.title ?? '',
         lockAt: body.lock_at ? new Date(body.lock_at) : new Date(),
         resolveAt: body.resolve_at ? new Date(body.resolve_at) : new Date(),
@@ -258,7 +258,8 @@ export class StellarWorkerService implements OnModuleInit, OnModuleDestroy {
         case 'Market:Created':
           await manager.upsert(MarketEntity, {
             title: parsed.title,
-            status: 'draft',
+            onChainId: parsed.marketId,
+            status: 'active', // Set to active when created on-chain
             lockAt: parsed.lockAt,
             resolveAt: parsed.resolveAt,
             createdBy: parsed.createdBy,
