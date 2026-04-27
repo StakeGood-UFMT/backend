@@ -225,7 +225,7 @@ export class AuthService {
       wallet,
       kyc_status: user.kycStatus,
       kyc_tier: user.kycTier,
-      expires_in: '15m',
+      expires_in: 86400,
       user: {
         id: user.id,
         primary_wallet: user.primaryWallet,
@@ -285,21 +285,21 @@ export class AuthService {
   }
 
   async refreshToken(refreshToken: string) {
-    const token = await this.refreshRepo.findOne({
+    const tokenRecord = await this.refreshRepo.findOne({
       where: { token: refreshToken },
       relations: ['user'],
     });
 
     const now = new Date();
 
-    if (!token || token.revoked) {
-      throw new BadRequestException('Refresh token not available');
+    if (!tokenRecord || tokenRecord.revoked) {
+      throw new UnauthorizedException('Refresh token not available or revoked');
     }
-    if (new Date(token.expiresAt).getTime() < now.getTime()) {
-      throw new BadRequestException('Refresh token expired');
+    if (new Date(tokenRecord.expiresAt).getTime() < now.getTime()) {
+      throw new UnauthorizedException('Refresh token expired');
     }
 
-    const user: UserEntity = token.user;
+    const user: UserEntity = tokenRecord.user;
 
     const newToken = this.jwtService.sign({
       sub: user.primaryWallet,
@@ -310,12 +310,11 @@ export class AuthService {
     });
 
     return {
-      refresh_token: refreshToken,
-      jwt: token,
+      jwt: newToken,
       wallet: user.primaryWallet,
       kyc_status: user.kycStatus,
       kyc_tier: user.kycTier,
-      expires_in: '15m',
+      expires_in: 86400,
       user: {
         id: user.id,
         primary_wallet: user.primaryWallet,

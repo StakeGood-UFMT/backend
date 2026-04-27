@@ -2,6 +2,7 @@ import { Controller, Get, Post, Body, Query, UseGuards } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { VerifyAuthDto } from './dto/verify-auth.dto';
 import { KycWebhookDto } from './dto/kyc-webhook.dto';
+import { RefreshAuthDto } from './dto/refresh-auth.dto';
 import { ThrottlerGuard, Throttle } from '@nestjs/throttler';
 import { HmacWebhookGuard } from './guards/hmac-webhook.guard';
 
@@ -33,7 +34,7 @@ export class AuthController {
   }
 
   @Post('refresh')
-  refresh(@Body() refreshToken: string) {
-    return this.authService.refreshToken(refreshToken);
+  refresh(@Body() dto: RefreshAuthDto) {
+    return this.authService.refreshToken(dto.refresh_token);
   }
 }
