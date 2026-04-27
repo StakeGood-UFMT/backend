@@ -16,6 +16,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { KeeperModule } from './features/keeper/keeper.module';
 import { NotificationsModule } from './features/notifications/notifications.module';
 import { BullModule } from '@nestjs/bullmq';
+import { ProposalModule } from './features/proposals/proposals.module';
 
 @Module({
   imports: [
@@ -101,6 +102,7 @@ import { BullModule } from '@nestjs/bullmq';
     AdminModule,
     KeeperModule,
     NotificationsModule,
+    ProposalModule,
   ],
   controllers: [AppController],
   providers: [AppService],
