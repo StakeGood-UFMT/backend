@@ -330,6 +330,43 @@ export class SettingsService {
   }
 
   // ─────────────────────────────────────────────
+  //  Simple Wallet Link (no challenge)
+  // ─────────────────────────────────────────────
+
+  async addWalletSimple(userId: string, address: string) {
+    if (!address || address.length !== 56 || !address.startsWith('G')) {
+      throw new BadRequestException('Invalid Stellar wallet address');
+    }
+
+    const details = await this.getOrCreate(userId);
+
+    const alreadyLinked = details.linkedWallets.some(
+      (w) => w.address === address,
+    );
+    if (alreadyLinked) {
+      throw new ConflictException('Wallet already linked to this account');
+    }
+
+    // Check if it's someone's primary wallet
+    const taken = await this.userRepo.findOne({
+      where: { primaryWallet: address },
+    });
+    if (taken) {
+      throw new ConflictException(
+        'Wallet is already registered as a primary wallet',
+      );
+    }
+
+    const updated = [
+      ...details.linkedWallets,
+      { address, linkedAt: new Date().toISOString() },
+    ];
+    await this.detailsRepo.update(details.id, { linkedWallets: updated });
+
+    return this.getSettings(userId);
+  }
+
+  // ─────────────────────────────────────────────
   //  2FA – stub for v2 (schema already present)
   // ─────────────────────────────────────────────
 
