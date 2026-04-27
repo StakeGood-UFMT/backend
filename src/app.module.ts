@@ -18,6 +18,7 @@ import { NotificationsModule } from './features/notifications/notifications.modu
 import { BullModule } from '@nestjs/bullmq';
 import { ProposalModule } from './features/proposals/proposals.module';
 import { SettingsModule } from './features/settings/settings.module';
+import { LeaderboardModule } from './features/leaderboard/leaderboard.module';
 
 @Module({
   imports: [
@@ -105,6 +106,7 @@ import { SettingsModule } from './features/settings/settings.module';
     NotificationsModule,
     ProposalModule,
     SettingsModule,
+    LeaderboardModule,
   ],
   controllers: [AppController],
   providers: [AppService],
