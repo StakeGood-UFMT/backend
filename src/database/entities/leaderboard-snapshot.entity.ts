@@ -7,7 +7,6 @@ import {
 } from 'typeorm';
 
 @Entity('leaderboard_snapshots')
-@Index(['timestamp'])
 export class LeaderboardSnapshotEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
