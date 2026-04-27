@@ -7,6 +7,8 @@ import { ProcessedTransactionEntity } from '../../database/entities/processed-tr
 import { WorkerCursorEntity } from '../../database/entities/worker-cursor.entity';
 import { NgoEntity } from '../../database/entities/ngo.entity';
 import { MarketEntity } from '../../database/entities/market.entity';
+import { StakeGoodGateway } from '../websocket/stakegood.gateway';
+import { NotificationService } from '../notifications/notification.service';
 
 const makeEvent = (overrides: Partial<HorizonEvent> = {}): HorizonEvent => ({
   id: 'evt-1',
@@ -23,6 +25,15 @@ describe('StellarWorkerService', () => {
   let service: StellarWorkerService;
   let processedTxRepo: jest.Mocked<Repository<ProcessedTransactionEntity>>;
   let cursorRepo: jest.Mocked<Repository<WorkerCursorEntity>>;
+
+  const mockGateway = {
+    emitMarketResolved: jest.fn(),
+    server: { emit: jest.fn() },
+  };
+
+  const mockNotificationService = {
+    createNotification: jest.fn().mockResolvedValue(undefined),
+  };
 
   const mockManager = {
     upsert: jest.fn().mockResolvedValue(undefined),
@@ -70,6 +81,8 @@ describe('StellarWorkerService', () => {
           provide: ConfigService,
           useValue: { get: jest.fn((_key: string, def?: any) => def ?? '') },
         },
+        { provide: StakeGoodGateway, useValue: mockGateway },
+        { provide: NotificationService, useValue: mockNotificationService },
       ],
     }).compile();
 
