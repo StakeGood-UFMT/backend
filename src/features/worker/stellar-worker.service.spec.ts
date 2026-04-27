@@ -31,9 +31,13 @@ describe('StellarWorkerService', () => {
   };
 
   const mockDataSource = {
-    transaction: jest.fn().mockImplementation(async (cb: (m: typeof mockManager) => Promise<void>) => {
-      await cb(mockManager);
-    }),
+    transaction: jest
+      .fn()
+      .mockImplementation(
+        async (cb: (m: typeof mockManager) => Promise<void>) => {
+          await cb(mockManager);
+        },
+      ),
   };
 
   beforeEach(async () => {
@@ -70,7 +74,9 @@ describe('StellarWorkerService', () => {
     }).compile();
 
     service = module.get(StellarWorkerService);
-    processedTxRepo = module.get(getRepositoryToken(ProcessedTransactionEntity));
+    processedTxRepo = module.get(
+      getRepositoryToken(ProcessedTransactionEntity),
+    );
     cursorRepo = module.get(getRepositoryToken(WorkerCursorEntity));
   });
 
@@ -92,13 +98,17 @@ describe('StellarWorkerService', () => {
       expect(mockDataSource.transaction).toHaveBeenCalledTimes(1);
       expect(mockManager.insert).toHaveBeenCalledWith(
         ProcessedTransactionEntity,
-        expect.objectContaining({ txHash: 'deadbeef', opIndex: 0, eventType: 'NGO:Registered' }),
+        expect.objectContaining({
+          txHash: 'deadbeef',
+          opIndex: 0,
+          eventType: 'NGO:Registered',
+        }),
       );
     });
 
     it('não processa duas vezes o mesmo evento em chamadas consecutivas', async () => {
       (processedTxRepo.countBy as jest.Mock)
-        .mockResolvedValueOnce(0)  // primeira chamada: novo
+        .mockResolvedValueOnce(0) // primeira chamada: novo
         .mockResolvedValueOnce(1); // segunda chamada: duplicado
 
       const event = JSON.stringify(makeEvent());
@@ -112,9 +122,14 @@ describe('StellarWorkerService', () => {
   describe('test_worker_cursor_persistence', () => {
     it('atualiza o cursor para o ledger do evento processado', async () => {
       (processedTxRepo.countBy as jest.Mock).mockResolvedValue(0);
-      (cursorRepo.findOne as jest.Mock).mockResolvedValue({ id: 'default', lastLedgerId: '100' });
+      (cursorRepo.findOne as jest.Mock).mockResolvedValue({
+        id: 'default',
+        lastLedgerId: '100',
+      });
 
-      await (service as any).dispatchEvent(JSON.stringify(makeEvent({ ledger: 105 })));
+      await (service as any).dispatchEvent(
+        JSON.stringify(makeEvent({ ledger: 105 })),
+      );
 
       expect(mockManager.upsert).toHaveBeenCalledWith(
         WorkerCursorEntity,
@@ -128,7 +143,9 @@ describe('StellarWorkerService', () => {
       mockDataSource.transaction.mockRejectedValueOnce(new Error('DB error'));
 
       await expect(
-        (service as any).dispatchEvent(JSON.stringify(makeEvent({ ledger: 105 }))),
+        (service as any).dispatchEvent(
+          JSON.stringify(makeEvent({ ledger: 105 })),
+        ),
       ).rejects.toThrow('DB error');
 
       const cursor = await (service as any).loadCursor();
@@ -136,7 +153,10 @@ describe('StellarWorkerService', () => {
     });
 
     it('carrega cursor existente ao inicializar stream', async () => {
-      (cursorRepo.findOne as jest.Mock).mockResolvedValue({ id: 'default', lastLedgerId: '200' });
+      (cursorRepo.findOne as jest.Mock).mockResolvedValue({
+        id: 'default',
+        lastLedgerId: '200',
+      });
 
       const cursor = await (service as any).loadCursor();
 
@@ -169,7 +189,10 @@ describe('StellarWorkerService', () => {
         value: JSON.stringify({ wallet_address: 'GABC123' }),
       });
       const result = (service as any).parseContractEvent(event);
-      expect(result).toEqual({ kind: 'NGO:Deactivated', walletAddress: 'GABC123' });
+      expect(result).toEqual({
+        kind: 'NGO:Deactivated',
+        walletAddress: 'GABC123',
+      });
     });
 
     it('parseia Market:Created corretamente', () => {

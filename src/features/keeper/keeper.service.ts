@@ -46,13 +46,22 @@ export class KeeperService {
 
       this.logger.log('Job de Keeper finalizado com sucesso.');
     } catch (error) {
-      this.logger.error(`Erro ao executar job de Keeper: ${error.message}`, error.stack);
+      this.logger.error(
+        `Erro ao executar job de Keeper: ${error.message}`,
+        error.stack,
+      );
     }
   }
 
   private async submitBatchBump(marketIds: bigint[]) {
-    const horizonUrl = this.config.get<string>('STELLAR_HORIZON_URL', 'https://horizon-testnet.stellar.org');
-    const networkPassphrase = this.config.get<string>('STELLAR_NETWORK_PASSPHRASE', StellarSdk.Networks.TESTNET);
+    const horizonUrl = this.config.get<string>(
+      'STELLAR_HORIZON_URL',
+      'https://horizon-testnet.stellar.org',
+    );
+    const networkPassphrase = this.config.get<string>(
+      'STELLAR_NETWORK_PASSPHRASE',
+      StellarSdk.Networks.TESTNET,
+    );
     const contractId = this.config.get<string>('STELLAR_CONTRACT_ID');
     const keeperSecret = this.config.get<string>('STELLAR_KEEPER_SECRET');
 
@@ -71,10 +80,15 @@ export class KeeperService {
     const op = StellarSdk.Operation.invokeHostFunction({
       func: StellarSdk.xdr.HostFunction.hostFunctionTypeInvokeContract(
         new StellarSdk.xdr.InvokeContractArgs({
-          contractAddress: StellarSdk.Address.fromString(contractId).toScAddress(),
+          contractAddress:
+            StellarSdk.Address.fromString(contractId).toScAddress(),
           functionName: 'batch_bump_ttl',
           args: [
-            StellarSdk.nativeToScVal(marketIds.map(id => StellarSdk.nativeToScVal(id, { type: 'u64' }))),
+            StellarSdk.nativeToScVal(
+              marketIds.map((id) =>
+                StellarSdk.nativeToScVal(id, { type: 'u64' }),
+              ),
+            ),
           ],
         }),
       ),

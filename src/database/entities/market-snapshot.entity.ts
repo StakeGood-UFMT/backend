@@ -1,5 +1,9 @@
 import {
-  Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, Index,
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  Index,
 } from 'typeorm';
 
 @Entity('market_snapshots')
@@ -21,7 +25,13 @@ export class MarketSnapshotEntity {
   @Column({ name: 'no_pool', type: 'decimal', precision: 18, scale: 8 })
   noPool: number;
 
-  @Column({ name: 'trading_volume', type: 'decimal', precision: 18, scale: 8, nullable: true })
+  @Column({
+    name: 'trading_volume',
+    type: 'decimal',
+    precision: 18,
+    scale: 8,
+    nullable: true,
+  })
   tradingVolume?: number;
 
   @CreateDateColumn({ name: 'created_at' })

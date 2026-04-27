@@ -9,7 +9,12 @@ import { RefreshTokenEntity } from '../../database/entities/refresh_tokens';
 import { StakeGoodGateway } from '../websocket/stakegood.gateway';
 
 const mockUser = (overrides: Partial<UserEntity> = {}): UserEntity =>
-  ({ id: 'user-uuid', primaryWallet: 'GABC', kycStatus: 'pending', ...overrides } as UserEntity);
+  ({
+    id: 'user-uuid',
+    primaryWallet: 'GABC',
+    kycStatus: 'pending',
+    ...overrides,
+  }) as UserEntity;
 
 const mockRepo = () => ({
   findOne: jest.fn(),
@@ -31,7 +36,10 @@ describe('AuthService – KYC Webhook', () => {
         { provide: getRepositoryToken(UserEntity), useFactory: mockRepo },
         { provide: getRepositoryToken(AuthNonceEntity), useFactory: mockRepo },
         { provide: getRepositoryToken(KycProfileEntity), useFactory: mockRepo },
-        { provide: getRepositoryToken(RefreshTokenEntity), useFactory: mockRepo },
+        {
+          provide: getRepositoryToken(RefreshTokenEntity),
+          useFactory: mockRepo,
+        },
         { provide: JwtService, useValue: { sign: jest.fn() } },
         { provide: StakeGoodGateway, useValue: mockGateway },
       ],
@@ -55,7 +63,9 @@ describe('AuthService – KYC Webhook', () => {
         applicant: { id: 'sumsub-app-id' },
       });
 
-      expect(userRepo.update).toHaveBeenCalledWith('user-uuid', { kycStatus: 'verified' });
+      expect(userRepo.update).toHaveBeenCalledWith('user-uuid', {
+        kycStatus: 'verified',
+      });
       expect(result).toEqual({ status: 'processed' });
     });
 
@@ -70,7 +80,9 @@ describe('AuthService – KYC Webhook', () => {
         applicant: { id: 'sumsub-app-id' },
       });
 
-      expect(userRepo.update).toHaveBeenCalledWith('user-uuid', { kycStatus: 'rejected' });
+      expect(userRepo.update).toHaveBeenCalledWith('user-uuid', {
+        kycStatus: 'rejected',
+      });
     });
 
     it('ignora webhook quando usuário não existe', async () => {
@@ -110,7 +122,10 @@ describe('AuthService – KYC Webhook', () => {
 
       expect(kycProfileRepo.update).toHaveBeenCalledWith(
         'profile-uuid',
-        expect.objectContaining({ status: 'approved', providerId: 'sumsub-app-id' }),
+        expect.objectContaining({
+          status: 'approved',
+          providerId: 'sumsub-app-id',
+        }),
       );
       expect(kycProfileRepo.save).not.toHaveBeenCalled();
     });

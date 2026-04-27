@@ -5,18 +5,17 @@ import { KycWebhookDto } from './dto/kyc-webhook.dto';
 import { ThrottlerGuard, Throttle } from '@nestjs/throttler';
 import { HmacWebhookGuard } from './guards/hmac-webhook.guard';
 
-
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
-  
-  @UseGuards(ThrottlerGuard) 
+
+  @UseGuards(ThrottlerGuard)
   @Get('nonce')
   @Throttle({
-    default:{
+    default: {
       ttl: 60000,
-      limit: 5
-    }
+      limit: 5,
+    },
   })
   getNonce(@Query('wallet') wallet: string) {
     return this.authService.generateNonce(wallet);
@@ -34,7 +33,7 @@ export class AuthController {
   }
 
   @Post('refresh')
-  refresh(@Body() refreshToken: string){
+  refresh(@Body() refreshToken: string) {
     return this.authService.refreshToken(refreshToken);
   }
 }

@@ -1,4 +1,9 @@
-import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleInit,
+  OnModuleDestroy,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
@@ -17,8 +22,8 @@ const MAX_DELAY_MS = 60_000;
 export interface HorizonEvent {
   id: string;
   type: string;
-  topic: string[];   // base64-encoded XDR ScVal per topic
-  value: string;     // base64-encoded XDR ScVal
+  topic: string[]; // base64-encoded XDR ScVal per topic
+  value: string; // base64-encoded XDR ScVal
   ledger: number;
   txHash: string;
   opIndex: number;
@@ -57,11 +62,11 @@ interface ParsedImpactDistributed {
   amount: string;
 }
 
-type ParsedEvent = 
-  | ParsedNgoRegistered 
-  | ParsedNgoDeactivated 
-  | ParsedMarketCreated 
-  | ParsedMarketResolved 
+type ParsedEvent =
+  | ParsedNgoRegistered
+  | ParsedNgoDeactivated
+  | ParsedMarketCreated
+  | ParsedMarketResolved
   | ParsedImpactDistributed;
 
 @Injectable()
@@ -95,7 +100,10 @@ export class StellarWorkerService implements OnModuleInit, OnModuleDestroy {
 
   private async startStream(): Promise<void> {
     const cursor = await this.loadCursor();
-    const horizonUrl = this.config.get<string>('STELLAR_HORIZON_URL', 'https://horizon-testnet.stellar.org');
+    const horizonUrl = this.config.get<string>(
+      'STELLAR_HORIZON_URL',
+      'https://horizon-testnet.stellar.org',
+    );
     const contractId = this.config.get<string>('STELLAR_CONTRACT_ID', '');
 
     const url = `${horizonUrl}/contracts/${contractId}/events?cursor=${cursor}&order=asc&limit=200`;
@@ -117,9 +125,14 @@ export class StellarWorkerService implements OnModuleInit, OnModuleDestroy {
       await this.consumeStream(response.body);
     } catch (err: any) {
       if (!this.running) return;
-      const delay = Math.min(BASE_DELAY_MS * 2 ** this.reconnectAttempt, MAX_DELAY_MS);
+      const delay = Math.min(
+        BASE_DELAY_MS * 2 ** this.reconnectAttempt,
+        MAX_DELAY_MS,
+      );
       this.reconnectAttempt++;
-      this.logger.warn(`Erro no stream (tentativa ${this.reconnectAttempt}), reconectando em ${delay}ms: ${err.message}`);
+      this.logger.warn(
+        `Erro no stream (tentativa ${this.reconnectAttempt}), reconectando em ${delay}ms: ${err.message}`,
+      );
       await this.sleep(delay);
       if (this.running) this.startStream();
     }
@@ -166,9 +179,14 @@ export class StellarWorkerService implements OnModuleInit, OnModuleDestroy {
     const parsed = this.parseContractEvent(event);
     if (!parsed) return;
 
-    const alreadyProcessed = await this.isAlreadyProcessed(event.txHash, event.opIndex);
+    const alreadyProcessed = await this.isAlreadyProcessed(
+      event.txHash,
+      event.opIndex,
+    );
     if (alreadyProcessed) {
-      this.logger.debug(`Tx duplicada ignorada: ${event.txHash}[${event.opIndex}]`);
+      this.logger.debug(
+        `Tx duplicada ignorada: ${event.txHash}[${event.opIndex}]`,
+      );
       return;
     }
 
@@ -186,7 +204,8 @@ export class StellarWorkerService implements OnModuleInit, OnModuleDestroy {
 
     let body: Record<string, any> = {};
     try {
-      body = typeof event.value === 'string' ? JSON.parse(event.value) : event.value;
+      body =
+        typeof event.value === 'string' ? JSON.parse(event.value) : event.value;
     } catch {
       return null;
     }
@@ -237,41 +256,62 @@ export class StellarWorkerService implements OnModuleInit, OnModuleDestroy {
     return null;
   }
 
-  private async persistAtomically(parsed: ParsedEvent, event: HorizonEvent): Promise<void> {
+  private async persistAtomically(
+    parsed: ParsedEvent,
+    event: HorizonEvent,
+  ): Promise<void> {
     await this.dataSource.transaction(async (manager) => {
       switch (parsed.kind) {
         case 'NGO:Registered':
-          await manager.upsert(NgoEntity, {
-            walletAddress: parsed.walletAddress,
-            name: parsed.name,
-            slug: parsed.walletAddress,
-            verified: false,
-            social: {},
-            impactMetrics: {},
-          }, ['walletAddress']);
+          await manager.upsert(
+            NgoEntity,
+            {
+              walletAddress: parsed.walletAddress,
+              name: parsed.name,
+              slug: parsed.walletAddress,
+              verified: false,
+              social: {},
+              impactMetrics: {},
+            },
+            ['walletAddress'],
+          );
           break;
 
         case 'NGO:Deactivated':
-          await manager.update(NgoEntity, { walletAddress: parsed.walletAddress }, { verified: false });
+          await manager.update(
+            NgoEntity,
+            { walletAddress: parsed.walletAddress },
+            { verified: false },
+          );
           break;
 
         case 'Market:Created':
-          await manager.upsert(MarketEntity, {
-            title: parsed.title,
-            onChainId: parsed.marketId,
-            status: 'active', // Set to active when created on-chain
-            lockAt: parsed.lockAt,
-            resolveAt: parsed.resolveAt,
-            createdBy: parsed.createdBy,
-          }, ['id']);
+          await manager.upsert(
+            MarketEntity,
+            {
+              title: parsed.title,
+              onChainId: parsed.marketId,
+              status: 'active', // Set to active when created on-chain
+              lockAt: parsed.lockAt,
+              resolveAt: parsed.resolveAt,
+              createdBy: parsed.createdBy,
+            },
+            ['id'],
+          );
           break;
 
         case 'Market:Resolved':
-          await manager.update(MarketEntity, { id: parsed.marketId }, {
-            status: 'resolved',
-            outcome: parsed.outcome as any,
+          await manager.update(
+            MarketEntity,
+            { id: parsed.marketId },
+            {
+              status: 'resolved',
+              outcome: parsed.outcome as any,
+            },
+          );
+          this.gateway.emitMarketResolved(parsed.marketId, {
+            outcome: parsed.outcome,
           });
-          this.gateway.emitMarketResolved(parsed.marketId, { outcome: parsed.outcome });
           break;
 
         case 'Impact:Distributed':
@@ -284,10 +324,10 @@ export class StellarWorkerService implements OnModuleInit, OnModuleDestroy {
             txHash: event.txHash,
           });
           // Assuming gateway has this method or similar
-          this.gateway.server.emit('impact_distributed', { 
-            marketId: parsed.marketId, 
-            ngoId: parsed.ngoId, 
-            amount: parsed.amount 
+          this.gateway.server.emit('impact_distributed', {
+            marketId: parsed.marketId,
+            ngoId: parsed.ngoId,
+            amount: parsed.amount,
           });
           break;
       }
@@ -305,13 +345,19 @@ export class StellarWorkerService implements OnModuleInit, OnModuleDestroy {
         processedAt: new Date(),
       });
 
-      await manager.upsert(WorkerCursorEntity, {
-        id: CURSOR_KEY,
-        lastLedgerId: String(event.ledger),
-      }, ['id']);
+      await manager.upsert(
+        WorkerCursorEntity,
+        {
+          id: CURSOR_KEY,
+          lastLedgerId: String(event.ledger),
+        },
+        ['id'],
+      );
     });
 
-    this.logger.log(`Evento processado: ${parsed.kind} (ledger=${event.ledger})`);
+    this.logger.log(
+      `Evento processado: ${parsed.kind} (ledger=${event.ledger})`,
+    );
   }
 
   async isAlreadyProcessed(txHash: string, opIndex: number): Promise<boolean> {

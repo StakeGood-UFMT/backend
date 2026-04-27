@@ -54,8 +54,12 @@ describe('TransactionsService', () => {
 
   describe('checkSpendingLimit', () => {
     it('test_limit_not_exceeded', async () => {
-      const user = { id: 'user1', spendingLimitUsd: 500, spendingWindowDays: 30 } as UserEntity;
-      
+      const user = {
+        id: 'user1',
+        spendingLimitUsd: 500,
+        spendingWindowDays: 30,
+      } as UserEntity;
+
       const queryBuilder: any = {
         select: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
@@ -64,12 +68,18 @@ describe('TransactionsService', () => {
       };
       userPositionRepo.createQueryBuilder.mockReturnValue(queryBuilder);
 
-      await expect(service['checkSpendingLimit'](user, 50)).resolves.not.toThrow();
+      await expect(
+        service['checkSpendingLimit'](user, 50),
+      ).resolves.not.toThrow();
     });
 
     it('test_limit_exceeded_returns_403', async () => {
-      const user = { id: 'user1', spendingLimitUsd: 500, spendingWindowDays: 30 } as UserEntity;
-      
+      const user = {
+        id: 'user1',
+        spendingLimitUsd: 500,
+        spendingWindowDays: 30,
+      } as UserEntity;
+
       const queryBuilder: any = {
         select: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
@@ -104,14 +114,18 @@ describe('TransactionsService', () => {
       title: 'Market 1',
       status: 'active',
       lockAt: new Date(Date.now() + 100000),
-      contractAddress: 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4',
+      contractAddress:
+        'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4',
     };
 
     beforeEach(() => {
       userRepo.findOne.mockResolvedValue(mockUser);
       marketRepo.findOne.mockResolvedValue(mockMarket);
-      snapshotRepo.findOne.mockResolvedValue({ yesPool: '1000', noPool: '1000' });
-      
+      snapshotRepo.findOne.mockResolvedValue({
+        yesPool: '1000',
+        noPool: '1000',
+      });
+
       const queryBuilder: any = {
         select: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
@@ -137,19 +151,20 @@ describe('TransactionsService', () => {
       userPositionRepo.findOne.mockResolvedValue({ outcome: 'NO' });
 
       const dto = { market_id: 'm1', outcome: 'YES' as const, amount: '100' };
-      
-      await expect(service.buildPrediction(dto, { userId: 'u1' }))
-        .rejects.toThrow(ConflictException);
+
+      await expect(
+        service.buildPrediction(dto, { userId: 'u1' }),
+      ).rejects.toThrow(ConflictException);
     });
 
     it('test_kyc_required_fails', async () => {
       userRepo.findOne.mockResolvedValue({ ...mockUser, kycStatus: 'pending' });
 
       const dto = { market_id: 'm1', outcome: 'YES' as const, amount: '100' };
-      
-      await expect(service.buildPrediction(dto, { userId: 'u1' }))
-        .rejects.toThrow(ForbiddenException);
+
+      await expect(
+        service.buildPrediction(dto, { userId: 'u1' }),
+      ).rejects.toThrow(ForbiddenException);
     });
   });
 });
-

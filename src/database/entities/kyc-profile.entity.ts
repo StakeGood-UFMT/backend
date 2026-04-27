@@ -1,6 +1,10 @@
 import {
-  Entity, PrimaryGeneratedColumn, Column, CreateDateColumn,
-  UpdateDateColumn, Index,
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  Index,
 } from 'typeorm';
 
 export type KycProfileStatus = 'pending' | 'approved' | 'rejected' | 'expired';
@@ -18,7 +22,11 @@ export class KycProfileEntity {
   providerId: string;
 
   @Index()
-  @Column({ type: 'enum', enum: ['pending', 'approved', 'rejected', 'expired'], default: 'pending' })
+  @Column({
+    type: 'enum',
+    enum: ['pending', 'approved', 'rejected', 'expired'],
+    default: 'pending',
+  })
   status: KycProfileStatus;
 
   @Column({ name: 'verified_at', nullable: true })

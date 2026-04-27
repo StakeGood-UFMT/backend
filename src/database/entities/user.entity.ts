@@ -1,6 +1,11 @@
 import {
-  Entity, PrimaryGeneratedColumn, Column, CreateDateColumn,
-  UpdateDateColumn, DeleteDateColumn, Index,
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  DeleteDateColumn,
+  Index,
 } from 'typeorm';
 
 export type UserRole = 'user' | 'moderator' | 'admin';
@@ -16,14 +21,28 @@ export class UserEntity {
   @Column({ name: 'primary_wallet', length: 56 })
   primaryWallet: string;
 
-  @Column({ type: 'enum', enum: ['user', 'moderator', 'admin'], default: 'user' })
+  @Column({
+    type: 'enum',
+    enum: ['user', 'moderator', 'admin'],
+    default: 'user',
+  })
   role: UserRole;
 
   @Index()
-  @Column({ name: 'kyc_status', type: 'enum', enum: ['pending', 'verified', 'rejected', 'expired'], default: 'pending' })
+  @Column({
+    name: 'kyc_status',
+    type: 'enum',
+    enum: ['pending', 'verified', 'rejected', 'expired'],
+    default: 'pending',
+  })
   kycStatus: KycStatus;
 
-  @Column({ name: 'kyc_tier', type: 'enum', enum: ['individual', 'business'], default: 'individual' })
+  @Column({
+    name: 'kyc_tier',
+    type: 'enum',
+    enum: ['individual', 'business'],
+    default: 'individual',
+  })
   kycTier: KycTier;
 
   @Column({ name: 'public_visibility', default: true })
@@ -32,7 +51,13 @@ export class UserEntity {
   @Column({ name: 'private_mode', default: false })
   privateMode: boolean;
 
-  @Column({ name: 'spending_limit_usd', type: 'decimal', precision: 10, scale: 2, default: 500.00 })
+  @Column({
+    name: 'spending_limit_usd',
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
+    default: 500.0,
+  })
   spendingLimitUsd: number;
 
   @Column({ name: 'spending_window_days', type: 'int', default: 30 })

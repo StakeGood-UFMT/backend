@@ -3,7 +3,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { MarketEntity } from '../../database/entities/market.entity';
 import { MarketSnapshotEntity } from '../../database/entities/market-snapshot.entity';
-import { ListMarketsQueryDto, MarketSortOption } from './dto/list-markets-query.dto';
+import {
+  ListMarketsQueryDto,
+  MarketSortOption,
+} from './dto/list-markets-query.dto';
 
 @Injectable()
 export class MarketsService {
@@ -16,19 +19,29 @@ export class MarketsService {
 
   // SC allows state=OPEN after lock_ts, so we derive the UI status here
   derivedStatus(market: MarketEntity): string {
-    if (market.status === 'active' && new Date() >= market.lockAt) return 'LOCKED';
+    if (market.status === 'active' && new Date() >= market.lockAt)
+      return 'LOCKED';
     return market.status;
   }
 
   async findAll(query: ListMarketsQueryDto) {
-    const { status, category, limit = 20, offset = 0, sort = MarketSortOption.NEWEST } = query;
+    const {
+      status,
+      category,
+      limit = 20,
+      offset = 0,
+      sort = MarketSortOption.NEWEST,
+    } = query;
 
     const qb = this.marketRepo.createQueryBuilder('m');
 
     if (status) qb.andWhere('m.status = :status', { status });
     if (category) qb.andWhere('m.category = :category', { category });
 
-    const orderMap: Record<MarketSortOption, { col: string; dir: 'ASC' | 'DESC' }> = {
+    const orderMap: Record<
+      MarketSortOption,
+      { col: string; dir: 'ASC' | 'DESC' }
+    > = {
       [MarketSortOption.NEWEST]: { col: 'm.createdAt', dir: 'DESC' },
       [MarketSortOption.OLDEST]: { col: 'm.createdAt', dir: 'ASC' },
       [MarketSortOption.VOLUME]: { col: 'm.createdAt', dir: 'DESC' },
@@ -38,7 +51,9 @@ export class MarketsService {
 
     const [markets, total] = await qb.getManyAndCount();
 
-    const latestSnapshots = await this.getLatestSnapshotsForMarkets(markets.map((m) => m.id));
+    const latestSnapshots = await this.getLatestSnapshotsForMarkets(
+      markets.map((m) => m.id),
+    );
 
     const items = markets.map((market) => {
       const snap = latestSnapshots.get(market.id);

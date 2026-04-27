@@ -1,6 +1,4 @@
-import {
-  Entity, PrimaryColumn, Column, UpdateDateColumn,
-} from 'typeorm';
+import { Entity, PrimaryColumn, Column, UpdateDateColumn } from 'typeorm';
 
 @Entity('worker_cursors')
 export class WorkerCursorEntity {

@@ -1,6 +1,10 @@
 import {
-  Entity, PrimaryGeneratedColumn, Column, CreateDateColumn,
-  UpdateDateColumn, Index,
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  Index,
 } from 'typeorm';
 
 export type MarketStatus = 'draft' | 'active' | 'locked' | 'resolved';
@@ -26,7 +30,11 @@ export class MarketEntity {
   onChainId?: string; // Using string to handle BigInt safely in JSON/TypeORM
 
   @Index()
-  @Column({ type: 'enum', enum: ['draft', 'active', 'locked', 'resolved'], default: 'draft' })
+  @Column({
+    type: 'enum',
+    enum: ['draft', 'active', 'locked', 'resolved'],
+    default: 'draft',
+  })
   status: MarketStatus;
 
   @Column({ name: 'image_url', type: 'text', nullable: true })
@@ -47,13 +55,31 @@ export class MarketEntity {
   @Column({ name: 'oracle_ref', length: 100, nullable: true })
   oracleRef?: string;
 
-  @Column({ name: 'fee_ngo', type: 'decimal', precision: 5, scale: 4, default: 0.02 })
+  @Column({
+    name: 'fee_ngo',
+    type: 'decimal',
+    precision: 5,
+    scale: 4,
+    default: 0.02,
+  })
   feeNgo: number;
 
-  @Column({ name: 'fee_platform', type: 'decimal', precision: 5, scale: 4, default: 0.01 })
+  @Column({
+    name: 'fee_platform',
+    type: 'decimal',
+    precision: 5,
+    scale: 4,
+    default: 0.01,
+  })
   feePlatform: number;
 
-  @Column({ name: 'fee_gamification', type: 'decimal', precision: 5, scale: 4, default: 0.005 })
+  @Column({
+    name: 'fee_gamification',
+    type: 'decimal',
+    precision: 5,
+    scale: 4,
+    default: 0.005,
+  })
   feeGamification: number;
 
   @Index()

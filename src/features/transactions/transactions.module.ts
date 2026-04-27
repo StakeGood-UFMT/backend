@@ -9,7 +9,15 @@ import { DepositEntity } from '../../database/entities/deposit.entity';
 import { UserPositionEntity } from '../../database/entities/user-position.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([UserEntity, MarketEntity, MarketSnapshotEntity, DepositEntity, UserPositionEntity])],
+  imports: [
+    TypeOrmModule.forFeature([
+      UserEntity,
+      MarketEntity,
+      MarketSnapshotEntity,
+      DepositEntity,
+      UserPositionEntity,
+    ]),
+  ],
   controllers: [TransactionsController],
   providers: [TransactionsService],
 })

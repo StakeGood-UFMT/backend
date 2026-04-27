@@ -1,4 +1,9 @@
-import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  CanActivate,
+  ExecutionContext,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 
@@ -24,7 +29,10 @@ export class HmacWebhookGuard implements CanActivate {
     const sigBuffer = Buffer.from(signature);
     const expBuffer = Buffer.from(expected);
 
-    if (sigBuffer.length !== expBuffer.length || !crypto.timingSafeEqual(sigBuffer, expBuffer)) {
+    if (
+      sigBuffer.length !== expBuffer.length ||
+      !crypto.timingSafeEqual(sigBuffer, expBuffer)
+    ) {
       throw new UnauthorizedException('Invalid HMAC signature');
     }
 
