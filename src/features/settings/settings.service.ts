@@ -86,6 +86,10 @@ export class SettingsService {
       security: {
         totpEnabled: details.totpEnabled,
       },
+      compliance: {
+        acceptedTermsVersion: details.acceptedTermsVersion,
+        acceptedTermsAt: details.acceptedTermsAt,
+      },
     };
   }
 
