@@ -1,4 +1,12 @@
-import { Controller, Get, Post, Body, Query, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Query,
+  UseGuards,
+  Param,
+} from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ImpactService } from './impact.service';
 
@@ -14,14 +22,33 @@ export class ImpactController {
     @Query('limit') limit = 50,
     @Query('offset') offset = 0,
   ) {
-    return this.impactService.getLedger({ from, to, ngoId, limit: +limit, offset: +offset });
+    return this.impactService.getLedger({
+      from,
+      to,
+      ngoId,
+      limit: +limit,
+      offset: +offset,
+    });
   }
 
   @Post('ledger/export')
   @UseGuards(AuthGuard('jwt'))
   exportLedger(
-    @Body() body: { format: 'csv' | 'pdf'; from: string; to: string; include_breakdown?: boolean },
+    @Body()
+    body: {
+      format: 'csv' | 'pdf';
+      from: string;
+      to: string;
+      ngo_id?: string;
+      include_breakdown?: boolean;
+    },
   ) {
     return this.impactService.exportLedger(body);
+  }
+
+  @Get('ledger/export/:jobId')
+  @UseGuards(AuthGuard('jwt'))
+  getExportStatus(@Param('jobId') jobId: string) {
+    return this.impactService.getExportStatus(jobId);
   }
 }

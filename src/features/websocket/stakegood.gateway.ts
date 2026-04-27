@@ -1,10 +1,15 @@
 import {
-  WebSocketGateway, WebSocketServer, SubscribeMessage,
-  OnGatewayConnection, OnGatewayDisconnect,
+  WebSocketGateway,
+  WebSocketServer,
+  SubscribeMessage,
+  OnGatewayConnection,
+  OnGatewayDisconnect,
 } from '@nestjs/websockets';
 
 @WebSocketGateway({ path: '/ws' })
-export class StakeGoodGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class StakeGoodGateway
+  implements OnGatewayConnection, OnGatewayDisconnect
+{
   @WebSocketServer()
   server: any;
 
@@ -18,7 +23,7 @@ export class StakeGoodGateway implements OnGatewayConnection, OnGatewayDisconnec
 
   @SubscribeMessage('subscribe_market')
   handleSubscribeMarket(client: any, marketId: string) {
-    // Note: Room support is not native to 'ws' library, 
+    // Note: Room support is not native to 'ws' library,
     // it would need manual implementation or a library like 'socket.io'.
     // However, we are switching to match frontend expectations.
     console.log(`Subscribing to market: ${marketId}`);
@@ -29,7 +34,10 @@ export class StakeGoodGateway implements OnGatewayConnection, OnGatewayDisconnec
     client.join(`user:${userId}`);
   }
 
-  emitKycStatusUpdated(userId: string, payload: { status: string; updatedAt: string }) {
+  emitKycStatusUpdated(
+    userId: string,
+    payload: { status: string; updatedAt: string },
+  ) {
     this.server.to(`user:${userId}`).emit('kyc_status_updated', payload);
   }
 

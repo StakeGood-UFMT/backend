@@ -1,10 +1,19 @@
 import {
-  Entity, PrimaryGeneratedColumn, Column, CreateDateColumn,
-  UpdateDateColumn, Index,
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  Index,
 } from 'typeorm';
 
 export type PositionOutcome = 'YES' | 'NO';
-export type PositionStatus = 'pending' | 'confirmed' | 'cancelled' | 'resolved' | 'claimed';
+export type PositionStatus =
+  | 'pending'
+  | 'confirmed'
+  | 'cancelled'
+  | 'resolved'
+  | 'claimed';
 
 @Entity('user_positions')
 export class UserPositionEntity {
@@ -25,7 +34,11 @@ export class UserPositionEntity {
   amountStaked: number;
 
   @Index()
-  @Column({ type: 'enum', enum: ['pending', 'confirmed', 'cancelled', 'resolved', 'claimed'], default: 'pending' })
+  @Column({
+    type: 'enum',
+    enum: ['pending', 'confirmed', 'cancelled', 'resolved', 'claimed'],
+    default: 'pending',
+  })
   status: PositionStatus;
 
   @Index()
@@ -35,7 +48,13 @@ export class UserPositionEntity {
   @Column({ name: 'resolved_at', nullable: true })
   resolvedAt?: Date;
 
-  @Column({ name: 'payout_amount', type: 'decimal', precision: 18, scale: 8, nullable: true })
+  @Column({
+    name: 'payout_amount',
+    type: 'decimal',
+    precision: 18,
+    scale: 8,
+    nullable: true,
+  })
   payoutAmount?: number;
 
   @CreateDateColumn({ name: 'created_at' })

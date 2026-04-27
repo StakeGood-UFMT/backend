@@ -1,5 +1,9 @@
 import {
-  Injectable, NotFoundException, ForbiddenException, BadRequestException, ConflictException,
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+  BadRequestException,
+  ConflictException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -36,14 +40,16 @@ export class TransactionsService {
       throw new ForbiddenException({
         error: 'KYC_REQUIRED',
         kyc_status: user.kycStatus,
-        message: 'Verified KYC is required to place predictions.'
+        message: 'Verified KYC is required to place predictions.',
       });
     }
 
     // Validation: Spending Limit (BE-6A)
     await this.checkSpendingLimit(user, parseFloat(dto.amount));
 
-    const market = await this.marketRepo.findOne({ where: { id: dto.market_id } });
+    const market = await this.marketRepo.findOne({
+      where: { id: dto.market_id },
+    });
     if (!market) throw new NotFoundException('Market not found');
 
     // Validation: Market Status and Lock Time
@@ -63,7 +69,8 @@ export class TransactionsService {
     if (existingPosition && existingPosition.outcome !== dto.outcome) {
       throw new ConflictException({
         error: 'HEDGE_LOCK_VIOLATION',
-        message: 'Hedging is not allowed. You already have a position on the opposite outcome in this market.',
+        message:
+          'Hedging is not allowed. You already have a position on the opposite outcome in this market.',
         existing_outcome: existingPosition.outcome,
       });
     }
@@ -78,26 +85,32 @@ export class TransactionsService {
     const amount = parseFloat(dto.amount);
 
     const impliedProbability = yesPool / (yesPool + noPool);
-    const payoutMultiplier = dto.outcome === 'YES'
-      ? (yesPool + noPool + amount) / (yesPool + amount)
-      : (yesPool + noPool + amount) / (noPool + amount);
+    const payoutMultiplier =
+      dto.outcome === 'YES'
+        ? (yesPool + noPool + amount) / (yesPool + amount)
+        : (yesPool + noPool + amount) / (noPool + amount);
     const potentialWin = amount * payoutMultiplier;
 
     // Soroban XDR Generation
     // Function: place_prediction(user: Address, market_id: u64, outcome: u32, amount: i128)
-    const contractId = market.contractAddress || 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4'; // Placeholder if not set
+    const contractId =
+      market.contractAddress ||
+      'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4'; // Placeholder if not set
     const amountStroops = BigInt(Math.floor(amount * 10000000)); // 7 decimals for USDC/SAC
-    
-    const marketIdU64 = BigInt(market.onChainId || 0); 
+
+    const marketIdU64 = BigInt(market.onChainId || 0);
     const outcomeU32 = dto.outcome === 'YES' ? 1 : 2;
 
     const op = StellarSdk.Operation.invokeHostFunction({
       func: StellarSdk.xdr.HostFunction.hostFunctionTypeInvokeContract(
         new StellarSdk.xdr.InvokeContractArgs({
-          contractAddress: StellarSdk.Address.fromString(contractId).toScAddress(),
+          contractAddress:
+            StellarSdk.Address.fromString(contractId).toScAddress(),
           functionName: 'place_prediction',
           args: [
-            StellarSdk.nativeToScVal(new StellarSdk.Address(user.primaryWallet)),
+            StellarSdk.nativeToScVal(
+              new StellarSdk.Address(user.primaryWallet),
+            ),
             StellarSdk.nativeToScVal(marketIdU64, { type: 'u64' }),
             StellarSdk.nativeToScVal(outcomeU32, { type: 'u32' }),
             StellarSdk.nativeToScVal(amountStroops, { type: 'i128' }),
@@ -111,7 +124,7 @@ export class TransactionsService {
     // Note: We use a dummy sequence '0' as the frontend will typically handle the sequence or fetch it
     const tx = new StellarSdk.TransactionBuilder(
       new StellarSdk.Account(user.primaryWallet, '0'),
-      { fee: '10000', networkPassphrase: StellarSdk.Networks.TESTNET }
+      { fee: '10000', networkPassphrase: StellarSdk.Networks.TESTNET },
     )
       .addOperation(op)
       .setTimeout(StellarSdk.TimeoutInfinite)
@@ -167,8 +180,7 @@ export class TransactionsService {
     return {
       success: true,
       status: 'pending_confirmation',
-      message: 'Transaction received and being processed'
+      message: 'Transaction received and being processed',
     };
   }
 }
-

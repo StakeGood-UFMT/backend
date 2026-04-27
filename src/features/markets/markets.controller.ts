@@ -26,7 +26,7 @@ export class MarketsController {
     @Query('range') range?: string,
   ) {
     let daysNum = days ? +days : 7;
-    
+
     if (range) {
       if (range === '1D') daysNum = 1;
       else if (range === '1W') daysNum = 7;

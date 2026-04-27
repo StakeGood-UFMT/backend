@@ -21,8 +21,10 @@ export class NgosService {
   async findAll(options: FindAllOptions) {
     const query = this.ngoRepo.createQueryBuilder('n');
 
-    if (options.category) query.andWhere('n.category = :category', { category: options.category });
-    if (options.verified !== undefined) query.andWhere('n.verified = :verified', { verified: options.verified });
+    if (options.category)
+      query.andWhere('n.category = :category', { category: options.category });
+    if (options.verified !== undefined)
+      query.andWhere('n.verified = :verified', { verified: options.verified });
 
     if (options.sort === 'alphabetical') {
       query.orderBy('n.name', 'ASC');
@@ -35,7 +37,12 @@ export class NgosService {
 
     return {
       ngos,
-      pagination: { total, limit: options.limit, offset: options.offset, has_next: options.offset + options.limit < total },
+      pagination: {
+        total,
+        limit: options.limit,
+        offset: options.offset,
+        has_next: options.offset + options.limit < total,
+      },
     };
   }
 }

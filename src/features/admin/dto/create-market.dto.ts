@@ -1,4 +1,11 @@
-import { IsString, IsNotEmpty, IsDateString, IsNumber, IsOptional, IsUrl } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsDateString,
+  IsNumber,
+  IsOptional,
+  IsUrl,
+} from 'class-validator';
 
 export class CreateMarketDto {
   @IsString()
@@ -36,7 +43,7 @@ export class CreateMarketDto {
   @IsNumber()
   @IsOptional()
   feeGamification?: number;
-  
+
   @IsString()
   @IsOptional()
   oracleRef?: string;

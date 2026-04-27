@@ -1,4 +1,8 @@
-import { Injectable, BadRequestException, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { JwtService } from '@nestjs/jwt';
 import { Repository } from 'typeorm';
@@ -25,7 +29,7 @@ export class AuthService {
     @InjectRepository(RefreshTokenEntity)
     private readonly refreshRepo: Repository<RefreshTokenEntity>,
     private readonly gateway: StakeGoodGateway,
-  ) { }
+  ) {}
 
   async generateNonce(wallet: string) {
     if (!wallet || wallet.length !== 56 || !wallet.startsWith('G')) {
@@ -57,7 +61,7 @@ export class AuthService {
     try {
       console.log(`[AuthService] Verifying signature for wallet: ${wallet}`);
       console.log(`[AuthService] Nonce: ${nonce}`);
-      
+
       const keypair = Keypair.fromPublicKey(wallet);
 
       let signatureBuffer: Buffer;
@@ -72,7 +76,9 @@ export class AuthService {
         throw new UnauthorizedException('Formato de assinatura inválido');
       }
 
-      console.log(`[AuthService] Signature (hex prefix): ${signatureBuffer.toString('hex').substring(0, 16)}...`);
+      console.log(
+        `[AuthService] Signature (hex prefix): ${signatureBuffer.toString('hex').substring(0, 16)}...`,
+      );
 
       const prefix = 'Stellar Signed Message:\n';
       const msgBuffer = Buffer.from(nonce);
@@ -83,28 +89,77 @@ export class AuthService {
         { name: 'Raw string', data: msgBuffer },
         { name: 'Raw string (UPPER)', data: Buffer.from(nonce.toUpperCase()) },
         { name: 'Hex bytes', data: hexBuffer },
-        
+
         // SEP-0053 Prefix
-        { name: 'SEP-0053 Prefix (string)', data: Buffer.concat([Buffer.from(prefix), msgBuffer]) },
-        { name: 'SEP-0053 Prefix (UPPER string)', data: Buffer.concat([Buffer.from(prefix), Buffer.from(nonce.toUpperCase())]) },
-        { name: 'SEP-0053 Prefix (hex)', data: Buffer.concat([Buffer.from(prefix), hexBuffer]) },
+        {
+          name: 'SEP-0053 Prefix (string)',
+          data: Buffer.concat([Buffer.from(prefix), msgBuffer]),
+        },
+        {
+          name: 'SEP-0053 Prefix (UPPER string)',
+          data: Buffer.concat([
+            Buffer.from(prefix),
+            Buffer.from(nonce.toUpperCase()),
+          ]),
+        },
+        {
+          name: 'SEP-0053 Prefix (hex)',
+          data: Buffer.concat([Buffer.from(prefix), hexBuffer]),
+        },
 
         // Hashed strategies (Freighter style)
-        { name: 'SHA256(Raw string)', data: crypto.createHash('sha256').update(msgBuffer).digest() },
-        { name: 'SHA256(Hex bytes)', data: crypto.createHash('sha256').update(hexBuffer).digest() },
-        { name: 'SHA256(Prefix + string)', data: crypto.createHash('sha256').update(Buffer.concat([Buffer.from(prefix), msgBuffer])).digest() },
-        { name: 'SHA256(Prefix + hex)', data: crypto.createHash('sha256').update(Buffer.concat([Buffer.from(prefix), hexBuffer])).digest() },
-        
+        {
+          name: 'SHA256(Raw string)',
+          data: crypto.createHash('sha256').update(msgBuffer).digest(),
+        },
+        {
+          name: 'SHA256(Hex bytes)',
+          data: crypto.createHash('sha256').update(hexBuffer).digest(),
+        },
+        {
+          name: 'SHA256(Prefix + string)',
+          data: crypto
+            .createHash('sha256')
+            .update(Buffer.concat([Buffer.from(prefix), msgBuffer]))
+            .digest(),
+        },
+        {
+          name: 'SHA256(Prefix + hex)',
+          data: crypto
+            .createHash('sha256')
+            .update(Buffer.concat([Buffer.from(prefix), hexBuffer]))
+            .digest(),
+        },
+
         // No newline prefix variations
-        { name: 'Prefix No NL (string)', data: Buffer.concat([Buffer.from('Stellar Signed Message:'), msgBuffer]) },
-        { name: 'SHA256(Prefix No NL + string)', data: crypto.createHash('sha256').update(Buffer.concat([Buffer.from('Stellar Signed Message:'), msgBuffer])).digest() },
+        {
+          name: 'Prefix No NL (string)',
+          data: Buffer.concat([
+            Buffer.from('Stellar Signed Message:'),
+            msgBuffer,
+          ]),
+        },
+        {
+          name: 'SHA256(Prefix No NL + string)',
+          data: crypto
+            .createHash('sha256')
+            .update(
+              Buffer.concat([
+                Buffer.from('Stellar Signed Message:'),
+                msgBuffer,
+              ]),
+            )
+            .digest(),
+        },
       ];
 
       let isValid = false;
       for (const strategy of strategies) {
         try {
           if (keypair.verify(strategy.data, signatureBuffer)) {
-            console.log(`[AuthService] Signature verified using strategy: ${strategy.name}`);
+            console.log(
+              `[AuthService] Signature verified using strategy: ${strategy.name}`,
+            );
             isValid = true;
             break;
           }
@@ -114,20 +169,22 @@ export class AuthService {
       }
 
       if (!isValid) {
-        console.error(`[AuthService] All ${strategies.length} verification strategies failed`);
+        console.error(
+          `[AuthService] All ${strategies.length} verification strategies failed`,
+        );
         throw new UnauthorizedException('Assinatura inválida');
       }
-
     } catch (error) {
       console.error(`[AuthService] Verification error:`, error);
       if (error instanceof UnauthorizedException) throw error;
       throw new UnauthorizedException('Erro na verificação da assinatura');
     }
 
-
     await this.nonceRepo.update(nonceRecord.id, { usedAt: new Date() });
 
-    let user = await this.userRepo.findOne({ where: { primaryWallet: wallet } });
+    let user = await this.userRepo.findOne({
+      where: { primaryWallet: wallet },
+    });
     if (!user) {
       user = await this.userRepo.save({ primaryWallet: wallet });
     }
@@ -138,19 +195,19 @@ export class AuthService {
     const refreshToken = crypto.randomBytes(64).toString('hex');
 
     const existingSession = await this.refreshRepo.findOne({
-      where: { user: { id: user.id } }
+      where: { user: { id: user.id } },
     });
 
     if (existingSession) {
       await this.refreshRepo.update(existingSession.id, {
         token: refreshToken,
-        expiresAt: refreshTokenExpiresAt
+        expiresAt: refreshTokenExpiresAt,
       });
     } else {
       await this.refreshRepo.save({
         user,
         token: refreshToken,
-        expiresAt: refreshTokenExpiresAt
+        expiresAt: refreshTokenExpiresAt,
       });
     }
 
@@ -176,24 +233,28 @@ export class AuthService {
         public_visibility: user.publicVisibility,
       },
     };
-
   }
 
   async processKycWebhook(dto: KycWebhookDto) {
-    const user = await this.userRepo.findOne({ where: { id: dto.externalUserId } });
+    const user = await this.userRepo.findOne({
+      where: { id: dto.externalUserId },
+    });
     if (!user) return { status: 'ignored' };
 
-    const newStatus = dto.review.reviewStatus === 'approved' ? 'verified' : 'rejected';
+    const newStatus =
+      dto.review.reviewStatus === 'approved' ? 'verified' : 'rejected';
 
     // Idempotência: não reverter estado já aprovado
     if (user.kycStatus === 'verified' && newStatus === 'rejected') {
       return { status: 'ignored' };
     }
 
-    await this.userRepo.update(user.id, { kycStatus: newStatus as any });
+    await this.userRepo.update(user.id, { kycStatus: newStatus });
 
     const providerId = dto.applicant?.id ?? 'unknown';
-    const existing = await this.kycProfileRepo.findOne({ where: { userId: user.id } });
+    const existing = await this.kycProfileRepo.findOne({
+      where: { userId: user.id },
+    });
 
     const profileStatus = newStatus === 'verified' ? 'approved' : 'rejected';
     const now = new Date();
@@ -211,7 +272,7 @@ export class AuthService {
         providerId,
         status: profileStatus,
         verifiedAt: profileStatus === 'approved' ? now : undefined,
-        rawData: dto as unknown as Record<string, any>,
+        rawData: dto,
       });
     }
 
@@ -223,15 +284,18 @@ export class AuthService {
     return { status: 'processed' };
   }
 
-  async refreshToken(refreshToken: string){
-    const token= await this.refreshRepo.findOne({ where: { token: refreshToken }, relations: ['user']});
+  async refreshToken(refreshToken: string) {
+    const token = await this.refreshRepo.findOne({
+      where: { token: refreshToken },
+      relations: ['user'],
+    });
 
     const now = new Date();
 
-    if(!token || token.revoked){
-       throw new BadRequestException('Refresh token not available');
+    if (!token || token.revoked) {
+      throw new BadRequestException('Refresh token not available');
     }
-    if(new Date(token.expiresAt).getTime() < now.getTime()){
+    if (new Date(token.expiresAt).getTime() < now.getTime()) {
       throw new BadRequestException('Refresh token expired');
     }
 
@@ -259,10 +323,5 @@ export class AuthService {
         public_visibility: user.publicVisibility,
       },
     };
-
-
   }
-
-
-
 }

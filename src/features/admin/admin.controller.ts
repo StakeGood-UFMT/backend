@@ -1,4 +1,12 @@
-import { Controller, Post, Body, UseGuards, Param, ParseUUIDPipe, Request } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  UseGuards,
+  Param,
+  ParseUUIDPipe,
+  Request,
+} from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { AdminService } from './admin.service';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -20,7 +28,7 @@ export class AdminController {
   async resolveMarket(
     @Param('id', ParseUUIDPipe) id: string,
     @Body('outcome') outcome: 'YES' | 'NO',
-    @Request() req: any
+    @Request() req: any,
   ) {
     return this.adminService.resolveMarket(id, outcome, req.user);
   }
@@ -28,7 +36,7 @@ export class AdminController {
   @Post(':id/cancel')
   async cancelMarket(
     @Param('id', ParseUUIDPipe) id: string,
-    @Request() req: any
+    @Request() req: any,
   ) {
     return this.adminService.cancelMarket(id, req.user);
   }
@@ -36,7 +44,7 @@ export class AdminController {
   @Post(':id/distribute-impact')
   async distributeImpact(
     @Param('id', ParseUUIDPipe) id: string,
-    @Request() req: any
+    @Request() req: any,
   ) {
     return this.adminService.distributeImpact(id, req.user);
   }

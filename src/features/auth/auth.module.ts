@@ -15,7 +15,12 @@ import { WebsocketModule } from '../websocket/websocket.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([UserEntity, RefreshTokenEntity, AuthNonceEntity, KycProfileEntity]),
+    TypeOrmModule.forFeature([
+      UserEntity,
+      RefreshTokenEntity,
+      AuthNonceEntity,
+      KycProfileEntity,
+    ]),
     PassportModule,
     WebsocketModule,
     JwtModule.registerAsync({

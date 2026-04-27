@@ -1,8 +1,16 @@
 import {
-  Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, Index,
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  Index,
 } from 'typeorm';
 
-export type LedgerSource = 'quadratic_voting' | 'donation' | 'grant' | 'fee_pool';
+export type LedgerSource =
+  | 'quadratic_voting'
+  | 'donation'
+  | 'grant'
+  | 'fee_pool';
 
 @Entity('impact_ledger_entries')
 export class ImpactLedgerEntryEntity {
@@ -27,7 +35,11 @@ export class ImpactLedgerEntryEntity {
   currency: string;
 
   @Index()
-  @Column({ type: 'enum', enum: ['quadratic_voting', 'donation', 'grant', 'fee_pool'], default: 'quadratic_voting' })
+  @Column({
+    type: 'enum',
+    enum: ['quadratic_voting', 'donation', 'grant', 'fee_pool'],
+    default: 'quadratic_voting',
+  })
   source: LedgerSource;
 
   @Column({ name: 'tx_hash', length: 64, nullable: true })

@@ -4,9 +4,7 @@ import { KeeperService } from './keeper.service';
 import { MarketEntity } from '../../database/entities/market.entity';
 
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([MarketEntity]),
-  ],
+  imports: [TypeOrmModule.forFeature([MarketEntity])],
   providers: [KeeperService],
   exports: [KeeperService],
 })

@@ -1,7 +1,7 @@
 import {
-  Entity, 
-  PrimaryGeneratedColumn, 
-  Column, 
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
   OneToOne,
   JoinColumn,
   Index,
@@ -10,20 +10,20 @@ import { UserEntity } from './user.entity';
 
 @Entity('refresh_tokens')
 export class RefreshTokenEntity {
-    @PrimaryGeneratedColumn('uuid')
-    id: string;
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
 
-    @OneToOne(() => UserEntity)
-    @JoinColumn({ name: 'user_id' })
-    user: UserEntity;
+  @OneToOne(() => UserEntity)
+  @JoinColumn({ name: 'user_id' })
+  user: UserEntity;
 
-    @Index()
-    @Column({ type: 'varchar' })
-    token: string;
+  @Index()
+  @Column({ type: 'varchar' })
+  token: string;
 
-    @Column({ name: 'expires_at' })
-    expiresAt: Date;
+  @Column({ name: 'expires_at' })
+  expiresAt: Date;
 
-    @Column({ default: false }) 
-    revoked: boolean;
+  @Column({ default: false })
+  revoked: boolean;
 }

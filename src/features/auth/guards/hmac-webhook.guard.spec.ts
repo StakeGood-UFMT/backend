@@ -26,7 +26,9 @@ describe('test_webhook_hmac_ok – HmacWebhookGuard', () => {
   let guard: HmacWebhookGuard;
 
   beforeEach(() => {
-    const config = { get: jest.fn().mockReturnValue(SECRET) } as unknown as ConfigService;
+    const config = {
+      get: jest.fn().mockReturnValue(SECRET),
+    } as unknown as ConfigService;
     guard = new HmacWebhookGuard(config);
   });
 
@@ -38,7 +40,11 @@ describe('test_webhook_hmac_ok – HmacWebhookGuard', () => {
 
   it('rejeita requisição com assinatura incorreta', () => {
     const body = Buffer.from('{"externalUserId":"u1"}');
-    const ctx = buildContext({ signature: 'assinatura-errada-hex-00000000000000000000000000000000000000000000000000000000000000', rawBody: body });
+    const ctx = buildContext({
+      signature:
+        'assinatura-errada-hex-00000000000000000000000000000000000000000000000000000000000000',
+      rawBody: body,
+    });
     expect(() => guard.canActivate(ctx)).toThrow(UnauthorizedException);
   });
 
@@ -49,12 +55,17 @@ describe('test_webhook_hmac_ok – HmacWebhookGuard', () => {
   });
 
   it('rejeita quando rawBody está ausente', () => {
-    const ctx = buildContext({ signature: sign(Buffer.from('{}')), rawBody: undefined });
+    const ctx = buildContext({
+      signature: sign(Buffer.from('{}')),
+      rawBody: undefined,
+    });
     expect(() => guard.canActivate(ctx)).toThrow(UnauthorizedException);
   });
 
   it('rejeita quando SUMSUB_WEBHOOK_SECRET não está configurado', () => {
-    const config = { get: jest.fn().mockReturnValue(undefined) } as unknown as ConfigService;
+    const config = {
+      get: jest.fn().mockReturnValue(undefined),
+    } as unknown as ConfigService;
     const guardNoSecret = new HmacWebhookGuard(config);
     const body = Buffer.from('{}');
     const ctx = buildContext({ signature: sign(body), rawBody: body });

@@ -1,6 +1,10 @@
 import {
-  Entity, PrimaryGeneratedColumn, Column, CreateDateColumn,
-  UpdateDateColumn, Index,
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  Index,
 } from 'typeorm';
 
 @Entity('ngos')
@@ -44,7 +48,13 @@ export class NgoEntity {
   @Column({ name: 'impact_metrics', type: 'jsonb', default: {} })
   impactMetrics: Record<string, any>;
 
-  @Column({ name: 'total_funds_received', type: 'decimal', precision: 18, scale: 8, default: 0 })
+  @Column({
+    name: 'total_funds_received',
+    type: 'decimal',
+    precision: 18,
+    scale: 8,
+    default: 0,
+  })
   totalFundsReceived: number;
 
   @CreateDateColumn({ name: 'created_at' })

@@ -1,5 +1,9 @@
 import {
-  Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, Index,
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  Index,
 } from 'typeorm';
 
 export type DepositStatus = 'pending' | 'confirmed' | 'failed';
@@ -23,7 +27,11 @@ export class DepositEntity {
   txHash: string;
 
   @Index()
-  @Column({ type: 'enum', enum: ['pending', 'confirmed', 'failed'], default: 'pending' })
+  @Column({
+    type: 'enum',
+    enum: ['pending', 'confirmed', 'failed'],
+    default: 'pending',
+  })
   status: DepositStatus;
 
   @CreateDateColumn({ name: 'created_at' })
