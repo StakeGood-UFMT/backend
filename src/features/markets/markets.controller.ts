@@ -1,10 +1,8 @@
-import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
+import { Controller, Get, Param, Query } from '@nestjs/common';
 import { MarketsService } from './markets.service';
 import { ListMarketsQueryDto } from './dto/list-markets-query.dto';
 
 @Controller('markets')
-@UseGuards(AuthGuard('jwt'))
 export class MarketsController {
   constructor(private readonly marketsService: MarketsService) {}
 
