@@ -15,6 +15,7 @@ import { DepositEntity } from '../../database/entities/deposit.entity';
 import { UserPositionEntity } from '../../database/entities/user-position.entity';
 import { BuildPredictionDto } from './dto/build-prediction.dto';
 import { SubmitTransactionDto } from './dto/submit-transaction.dto';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class TransactionsService {
@@ -29,7 +30,8 @@ export class TransactionsService {
     private readonly depositRepo: Repository<DepositEntity>,
     @InjectRepository(UserPositionEntity)
     private readonly userPositionRepo: Repository<UserPositionEntity>,
-  ) {}
+    private readonly config: ConfigService,
+  ) { }
 
   async buildPrediction(dto: BuildPredictionDto, jwtUser: any) {
     const user = await this.userRepo.findOne({ where: { id: jwtUser.userId } });
@@ -175,12 +177,47 @@ export class TransactionsService {
   }
 
   async submit(dto: SubmitTransactionDto) {
-    // TODO: Actually submit to Stellar network
-    // For now, return success mock
-    return {
-      success: true,
-      status: 'pending_confirmation',
-      message: 'Transaction received and being processed',
-    };
+
+    const sorobanUrl = this.config.get<string>('STELLAR_RPC_URL', 'https://soroban-testnet.stellar.org');
+
+
+    const server = new StellarSdk.rpc.Server(sorobanUrl);
+    const networkPassphrase = this.config.get<string>(
+      'STELLAR_NETWORK_PASSPHRASE',
+      StellarSdk.Networks.TESTNET,
+    );
+
+    const contractId = this.config.get<string>('STELLAR_CONTRACT_ID');
+    try {
+      const transaction = new StellarSdk.Transaction(dto.signedXdr, networkPassphrase);
+
+      const op = transaction.operations[0] as StellarSdk.Operation.InvokeHostFunction;
+
+      const invokeContract = op.func.invokeContract();
+      const internalContractId = invokeContract.contractAddress().toString();
+
+      if (internalContractId !== contractId) {
+        throw new Error("Contrato inválido para esta operação.");
+      }
+
+      const response = await server.sendTransaction(transaction);
+
+      if (response.status === 'ERROR') {
+        throw new Error(`Erro no envio: ${JSON.stringify(response.errorResult)}`);
+      }
+
+      return {
+        success: true,
+        status: 'pending_confirmation',
+        hash: response.hash,
+        message: 'Transaction received and being processed',
+      };
+    } catch (error) {
+      const e = error as Error;
+      return {
+        success: false,
+        error: e.message,
+      }
+    }
   }
 }
