@@ -17,6 +17,9 @@ import {
   LinkWalletVerifyDto,
 } from './dto/settings.dto';
 import { TwoFactorService } from '../auth/two-factor.service';
+import { In } from 'typeorm';
+import { UserPositionEntity } from '../../database/entities/user-position.entity';
+import { MarketEntity } from '../../database/entities/market.entity';
 
 @Injectable()
 export class SettingsService {
@@ -25,6 +28,10 @@ export class SettingsService {
     private readonly userRepo: Repository<UserEntity>,
     @InjectRepository(UserDetailsEntity)
     private readonly detailsRepo: Repository<UserDetailsEntity>,
+    @InjectRepository(UserPositionEntity)
+    private readonly positionRepo: Repository<UserPositionEntity>,
+    @InjectRepository(MarketEntity)
+    private readonly marketRepo: Repository<MarketEntity>,
     private readonly twoFactorService: TwoFactorService,
   ) {}
 
@@ -467,5 +474,37 @@ export class SettingsService {
       success: true,
       message: 'Two-factor authentication disabled successfully',
     };
+  }
+
+  async getClaims(userId: string) {
+    const positions = await this.positionRepo.find({
+      where: { userId, status: In(['resolved', 'claimed']) },
+      order: { updatedAt: 'DESC' },
+    });
+
+    if (positions.length === 0) return [];
+
+    const marketIds = Array.from(new Set(positions.map((p) => p.marketId)));
+    const markets = await this.marketRepo.findBy({ id: In(marketIds) });
+    const marketById = new Map(markets.map((m) => [m.id, m]));
+
+    return positions.map((p) => {
+      const market = marketById.get(p.marketId);
+      const claimed = p.status === 'claimed';
+      const amount = Number(p.payoutAmount ?? 0);
+
+      return {
+        id: p.id,
+        market_id: p.marketId,
+        market_title: market?.title ?? p.marketId,
+        amount,
+        claimed,
+        can_claim: !claimed && amount > 0,
+        market_state: (market?.status ?? 'resolved').toUpperCase(),
+        claimed_at: claimed ? p.updatedAt.toISOString() : undefined,
+        tx_hash: p.txHash ?? undefined,
+        impact_generated_by_user: 0,
+      };
+    });
   }
 }

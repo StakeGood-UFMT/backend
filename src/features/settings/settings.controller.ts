@@ -107,6 +107,11 @@ export class SettingsController {
     return this.settingsService.unlinkWallet(req.user.userId, address);
   }
 
+  @Get('claims')
+  getClaims(@Request() req: any) {
+    return this.settingsService.getClaims(req.user.userId);
+  }
+
   /**
    * GET /api/v1/users/me/2fa
    * Returns the current 2FA status.

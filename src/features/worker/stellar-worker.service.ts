@@ -17,6 +17,7 @@ import { UserEntity } from '../../database/entities/user.entity';
 import { UserPositionEntity } from '../../database/entities/user-position.entity';
 import { StakeGoodGateway } from '../websocket/stakegood.gateway';
 import { NotificationService } from '../notifications/notification.service';
+import * as StellarSdk from '@stellar/stellar-sdk';
 
 const CURSOR_KEY = 'default';
 const BASE_DELAY_MS = 1000;
@@ -25,8 +26,8 @@ const MAX_DELAY_MS = 60_000;
 export interface HorizonEvent {
   id: string;
   type: string;
-  topic: string[]; // base64-encoded XDR ScVal per topic
-  value: string; // base64-encoded XDR ScVal
+  topic: string[];
+  value: unknown;
   ledger: number;
   txHash: string;
   opIndex: number;
@@ -76,7 +77,6 @@ type ParsedEvent =
 export class StellarWorkerService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(StellarWorkerService.name);
   private running = false;
-  private abortController: AbortController | null = null;
   private reconnectAttempt = 0;
 
   constructor(
@@ -99,102 +99,115 @@ export class StellarWorkerService implements OnModuleInit, OnModuleDestroy {
 
   onModuleDestroy() {
     this.running = false;
-    this.abortController?.abort();
   }
 
   private async startStream(): Promise<void> {
-    const cursor = await this.loadCursor();
-    const horizonUrl = this.config.get<string>(
-      'STELLAR_HORIZON_URL',
-      'https://horizon-testnet.stellar.org',
+    const cursor = Number(await this.loadCursor());
+    const rpcUrl = this.config.get<string>(
+      'STELLAR_RPC_URL',
+      'https://soroban-testnet.stellar.org',
     );
     const contractId = this.config.get<string>('STELLAR_CONTRACT_ID', '');
 
-    const url = `${horizonUrl}/contracts/${contractId}/events?cursor=${cursor}&order=asc&limit=200`;
-
-    this.logger.log(`Worker conectando ao Horizon (cursor=${cursor})`);
-
-    try {
-      this.abortController = new AbortController();
-      const response = await fetch(url, {
-        headers: { Accept: 'text/event-stream' },
-        signal: this.abortController.signal,
-      });
-
-      if (!response.ok || !response.body) {
-        throw new Error(`Horizon respondeu com status ${response.status}`);
-      }
-
-      this.reconnectAttempt = 0;
-      await this.consumeStream(response.body);
-    } catch (err: any) {
-      if (!this.running) return;
-      const delay = Math.min(
-        BASE_DELAY_MS * 2 ** this.reconnectAttempt,
-        MAX_DELAY_MS,
-      );
-      this.reconnectAttempt++;
-      this.logger.warn(
-        `Erro no stream (tentativa ${this.reconnectAttempt}), reconectando em ${delay}ms: ${err.message}`,
-      );
-      await this.sleep(delay);
-      if (this.running) this.startStream();
+    if (!contractId) {
+      this.logger.warn('STELLAR_CONTRACT_ID não configurado; worker desativado.');
+      return;
     }
-  }
 
-  private async consumeStream(body: ReadableStream<Uint8Array>): Promise<void> {
-    const reader = body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
+    const rpc = new StellarSdk.rpc.Server(rpcUrl, {
+      allowHttp: rpcUrl.startsWith('http://'),
+    });
+
+    let lastLedger = Number.isFinite(cursor) ? cursor : 0;
+    if (lastLedger < 0) lastLedger = 0;
+
+    this.logger.log(
+      `Worker conectando ao Stellar RPC (startLedger=${lastLedger}, contract=${contractId})`,
+    );
 
     while (this.running) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() ?? '';
-
-      for (const line of lines) {
-        if (line.startsWith('data:')) {
-          const raw = line.slice(5).trim();
-          if (raw && raw !== '{}') {
-            await this.dispatchEvent(raw);
-          }
+      try {
+        const latest = await rpc.getLatestLedger();
+        const endLedger = latest.sequence;
+        if (endLedger < 1) {
+          await this.sleep(1000);
+          continue;
         }
-      }
-    }
+        if (lastLedger === 0 || lastLedger > endLedger) {
+          lastLedger = endLedger;
+        }
+        const startLedger = Math.min(lastLedger, endLedger);
 
-    if (this.running) {
-      this.logger.log('Stream encerrado pelo servidor, reconectando...');
-      await this.startStream();
+        const response = await rpc.getEvents({
+          filters: [{ type: 'contract', contractIds: [contractId] }],
+          startLedger,
+          endLedger,
+          limit: 200,
+        });
+
+        this.reconnectAttempt = 0;
+
+        for (const ev of response.events) {
+          const normalized = this.normalizeRpcEvent(ev);
+          const parsed = this.parseContractEvent(normalized);
+          if (!parsed) continue;
+
+          const alreadyProcessed = await this.isAlreadyProcessed(
+            normalized.txHash,
+            normalized.opIndex,
+          );
+          if (alreadyProcessed) continue;
+
+          await this.persistAtomically(parsed, normalized);
+        }
+
+        lastLedger = endLedger;
+        await this.sleep(1000);
+      } catch (err: any) {
+        if (!this.running) return;
+        const msg = err instanceof Error ? err.message : String(err);
+        const rangeMatch =
+          /ledger range:\s*(\d+)\s*-\s*(\d+)/i.exec(msg) ?? null;
+        if (rangeMatch) {
+          lastLedger = Number(rangeMatch[2]);
+        }
+        const delay = Math.min(
+          BASE_DELAY_MS * 2 ** this.reconnectAttempt,
+          MAX_DELAY_MS,
+        );
+        this.reconnectAttempt++;
+        this.logger.warn(
+          `Erro no stream RPC (tentativa ${this.reconnectAttempt}), reconectando em ${delay}ms: ${err.message}`,
+        );
+        await this.sleep(delay);
+      }
     }
   }
 
-  private async dispatchEvent(rawJson: string): Promise<void> {
-    let event: HorizonEvent;
-    try {
-      event = JSON.parse(rawJson) as HorizonEvent;
-    } catch {
-      this.logger.warn(`Evento inválido ignorado: ${rawJson.slice(0, 100)}`);
-      return;
-    }
+  private normalizeRpcEvent(ev: any): HorizonEvent {
+    const topicNative = Array.isArray(ev.topic)
+      ? ev.topic.map((t: any) => StellarSdk.scValToNative(t))
+      : [];
 
-    const parsed = this.parseContractEvent(event);
-    if (!parsed) return;
+    const topic = topicNative.map((t: any) => String(t));
 
-    const alreadyProcessed = await this.isAlreadyProcessed(
-      event.txHash,
-      event.opIndex,
-    );
-    if (alreadyProcessed) {
-      this.logger.debug(
-        `Tx duplicada ignorada: ${event.txHash}[${event.opIndex}]`,
-      );
-      return;
-    }
+    const valueNative = ev.value ? StellarSdk.scValToNative(ev.value) : {};
+    const value =
+      valueNative instanceof Map
+        ? Object.fromEntries(
+            Array.from(valueNative.entries()).map(([k, v]) => [String(k), v]),
+          )
+        : valueNative;
 
-    await this.persistAtomically(parsed, event);
+    return {
+      id: String(ev.id ?? ''),
+      type: String(ev.type ?? ''),
+      topic,
+      value,
+      ledger: Number(ev.ledger ?? 0),
+      txHash: String(ev.txHash ?? ''),
+      opIndex: Number(ev.operationIndex ?? 0),
+    };
   }
 
   private parseContractEvent(event: HorizonEvent): ParsedEvent | null {
