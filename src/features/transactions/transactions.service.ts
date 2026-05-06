@@ -115,8 +115,31 @@ export class TransactionsService {
       order: { timestamp: 'DESC' },
     });
 
-    const yesPool = snapshot ? parseFloat(snapshot.yesPool as any) : 50000;
-    const noPool = snapshot ? parseFloat(snapshot.noPool as any) : 50000;
+    let yesPool = snapshot ? parseFloat(snapshot.yesPool as any) : 0;
+    let noPool = snapshot ? parseFloat(snapshot.noPool as any) : 0;
+
+    if (!snapshot) {
+      const row = await this.userPositionRepo
+        .createQueryBuilder('p')
+        .select(
+          "COALESCE(SUM(CASE WHEN p.outcome = 'YES' THEN p.amount_staked ELSE 0 END), 0)",
+          'yes',
+        )
+        .addSelect(
+          "COALESCE(SUM(CASE WHEN p.outcome = 'NO' THEN p.amount_staked ELSE 0 END), 0)",
+          'no',
+        )
+        .where('p.market_id = :marketId', { marketId: market.id })
+        .andWhere("p.status IN ('pending','confirmed','resolved','claimed')")
+        .getRawOne<{ yes: string; no: string }>();
+      yesPool = Number(row?.yes ?? 0);
+      noPool = Number(row?.no ?? 0);
+    }
+
+    if (yesPool + noPool <= 0) {
+      yesPool = 1;
+      noPool = 1;
+    }
     const amount = parseFloat(dto.amount);
 
     const impliedProbability = yesPool / (yesPool + noPool);
@@ -170,10 +193,10 @@ export class TransactionsService {
           action: 'place_prediction',
           market: { id: market.id, title: market.title },
           outcome: dto.outcome,
-          amount: `${dto.amount} USDC`,
+          amount: `${dto.amount} XLM`,
           implied_probability: impliedProbability.toFixed(3),
           implied_odds: payoutMultiplier.toFixed(2),
-          potential_win: `${potentialWin.toFixed(2)} USDC`,
+          potential_win: `${potentialWin.toFixed(2)} XLM`,
         },
       };
     }
@@ -209,10 +232,10 @@ export class TransactionsService {
         action: 'place_prediction',
         market: { id: market.id, title: market.title },
         outcome: dto.outcome,
-        amount: `${dto.amount} USDC`,
+        amount: `${dto.amount} XLM`,
         implied_probability: impliedProbability.toFixed(3),
         implied_odds: payoutMultiplier.toFixed(2),
-        potential_win: `${potentialWin.toFixed(2)} USDC`,
+        potential_win: `${potentialWin.toFixed(2)} XLM`,
       },
     };
   }
@@ -244,7 +267,46 @@ export class TransactionsService {
     }
   }
 
-  async submit(dto: SubmitTransactionDto) {
+  async getTxStatus(hash: string) {
+    if (!hash || !/^[0-9a-fA-F]{64}$/.test(hash)) {
+      throw new BadRequestException('Invalid transaction hash');
+    }
+
+    const rpc = this.getRpcServer();
+    const result: any = await rpc.getTransaction(hash);
+
+    const rawStatus = String(result?.status ?? '').toUpperCase();
+    const normalizedStatus =
+      rawStatus === 'SUCCESS'
+        ? 'confirmed'
+        : rawStatus === 'FAILED' || rawStatus === 'ERROR'
+          ? 'failed'
+          : 'pending';
+
+    if (normalizedStatus === 'confirmed') {
+      await this.userPositionRepo.update(
+        { txHash: hash, status: 'pending' },
+        { status: 'confirmed' },
+      );
+    } else if (normalizedStatus === 'failed') {
+      await this.userPositionRepo.update(
+        { txHash: hash, status: 'pending' },
+        { status: 'cancelled' },
+      );
+    }
+
+    return {
+      hash,
+      status: normalizedStatus,
+      rawStatus,
+      latestLedger: result?.latestLedger,
+      latestLedgerCloseTime: result?.latestLedgerCloseTime,
+      ledger: result?.ledger,
+      createdAt: result?.createdAt,
+    };
+  }
+
+  async submit(dto: SubmitTransactionDto, jwtUser: any) {
     if (this.config.get<string>('NODE_ENV') === 'test') {
       return { status: 'PENDING', hash: 'test' };
     }
@@ -266,6 +328,31 @@ export class TransactionsService {
         'Transaction failed';
       throw new BadRequestException(detail);
     }
+
+    const txHash =
+      dto.txHash && /^[0-9a-fA-F]{64}$/.test(dto.txHash)
+        ? dto.txHash
+        : String((send as any).hash ?? tx.hash().toString('hex'));
+
+    const amountNumber = dto.amount ? Number(dto.amount) : NaN;
+    const canPersistPosition =
+      jwtUser?.userId &&
+      dto.market_id &&
+      (dto.outcome === 'YES' || dto.outcome === 'NO') &&
+      Number.isFinite(amountNumber) &&
+      amountNumber > 0;
+
+    if (canPersistPosition) {
+      await this.userPositionRepo.save({
+        userId: jwtUser.userId,
+        marketId: dto.market_id!,
+        outcome: dto.outcome!,
+        amountStaked: amountNumber,
+        status: 'pending',
+        txHash,
+      });
+    }
+
     return send;
   }
 }

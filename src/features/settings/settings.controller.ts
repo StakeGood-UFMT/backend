@@ -14,6 +14,7 @@ import {
 import type { Request as ExpressRequest } from 'express';
 import { AuthGuard } from '@nestjs/passport';
 import { SettingsService } from './settings.service';
+import { AuthService } from '../auth/auth.service';
 import {
   UpdatePrivacyDto,
   UpdateSpendingLimitsDto,
@@ -24,7 +25,10 @@ import {
 @Controller('users/me')
 @UseGuards(AuthGuard('jwt'))
 export class SettingsController {
-  constructor(private readonly settingsService: SettingsService) {}
+  constructor(
+    private readonly settingsService: SettingsService,
+    private readonly authService: AuthService,
+  ) {}
 
   /**
    * GET /api/v1/users/me/settings
@@ -160,5 +164,11 @@ export class SettingsController {
   exportCompliance(@Request() req: any) {
     // Stub
     return { message: 'Export started. You will receive an email shortly.' };
+  }
+
+  @Post('kyc/mock-verify')
+  @HttpCode(HttpStatus.OK)
+  mockVerifyKyc(@Request() req: any) {
+    return this.authService.mockVerifyKyc(req.user.userId);
   }
 }

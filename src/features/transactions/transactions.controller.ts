@@ -1,4 +1,4 @@
-import { Controller, Post, Body, UseGuards, Request } from '@nestjs/common';
+import { Controller, Post, Body, UseGuards, Request, Get, Param } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { TransactionsService } from './transactions.service';
 import { BuildPredictionDto } from './dto/build-prediction.dto';
@@ -19,7 +19,15 @@ export class TransactionsController {
   }
 
   @Post('submit')
-  submit(@Body() dto: SubmitTransactionDto) {
-    return this.transactionsService.submit(dto);
+  submit(
+    @Body() dto: SubmitTransactionDto,
+    @Request() req: ExpressRequest & { user?: { [key: string]: any } },
+  ) {
+    return this.transactionsService.submit(dto, req.user);
+  }
+
+  @Get(':hash/status')
+  getStatus(@Param('hash') hash: string) {
+    return this.transactionsService.getTxStatus(hash);
   }
 }

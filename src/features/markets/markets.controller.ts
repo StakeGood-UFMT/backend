@@ -33,4 +33,17 @@ export class MarketsController {
 
     return this.marketsService.getHistory(id, interval, daysNum);
   }
+
+  @Get(':id/positions')
+  listPositions(
+    @Param('id') id: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
+    return this.marketsService.listPositions(
+      id,
+      limit ? Number(limit) : undefined,
+      offset ? Number(offset) : undefined,
+    );
+  }
 }
