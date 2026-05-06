@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { ForbiddenException, ConflictException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { TransactionsService } from './transactions.service';
 import { UserEntity } from '../../database/entities/user.entity';
 import { MarketEntity } from '../../database/entities/market.entity';
@@ -19,6 +20,12 @@ describe('TransactionsService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TransactionsService,
+        {
+          provide: ConfigService,
+          useValue: {
+            get: jest.fn((k: string, def?: any) => (k === 'NODE_ENV' ? 'test' : def)),
+          },
+        },
         {
           provide: getRepositoryToken(UserEntity),
           useValue: { findOne: jest.fn() },
