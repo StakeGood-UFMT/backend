@@ -2,6 +2,7 @@ import {
   Injectable,
   BadRequestException,
   UnauthorizedException,
+  NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -305,12 +306,57 @@ export class AuthService {
       });
     }
 
-    this.gateway.emitKycStatusUpdated(user.id, {
+    this.gateway.emitKycStatusUpdated(user.primaryWallet, {
       status: newStatus,
       updatedAt: now.toISOString(),
     });
 
     return { status: 'processed' };
+  }
+
+  async mockVerifyKyc(userId: string) {
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+
+    const now = new Date();
+    const rawData = {
+      mock: true,
+      source: 'users/me/kyc/mock-verify',
+      verifiedAt: now.toISOString(),
+    } as unknown as Record<string, any>;
+
+    if (user.kycStatus !== 'verified') {
+      await this.userRepo.update(user.id, { kycStatus: 'verified' });
+
+      const existing = await this.kycProfileRepo.findOne({
+        where: { userId: user.id },
+      });
+
+      if (existing) {
+        await this.kycProfileRepo.update(existing.id, {
+          status: 'approved',
+          providerId: existing.providerId || 'mock',
+          verifiedAt: now,
+          rawData,
+        });
+      } else {
+        await this.kycProfileRepo.save({
+          userId: user.id,
+          providerId: 'mock',
+          status: 'approved',
+          verifiedAt: now,
+          rawData,
+          amlFlags: {},
+        });
+      }
+
+      this.gateway.emitKycStatusUpdated(user.primaryWallet, {
+        status: 'verified',
+        updatedAt: now.toISOString(),
+      });
+    }
+
+    return { status: 'verified', updatedAt: now.toISOString() };
   }
 
   async refreshToken(refreshToken: string) {
