@@ -6,6 +6,28 @@ import { ConfigService } from '@nestjs/config';
 import { MarketEntity } from '../../database/entities/market.entity';
 import * as StellarSdk from '@stellar/stellar-sdk';
 
+export interface AdminMarketTTLDto {
+  id: string;
+  title: string;
+  description: string;
+  category: string;
+  status: string;
+  image_url?: string;
+  total_liquidity: string;
+  lock_at: string;
+  settle_at?: string;
+  created_at: string;
+  resolution_rule: string;
+  resolution_source: string;
+  oracle_url?: string;
+  contract_address?: string;
+  fee_ngo: number;
+  fee_platform: number;
+  fee_gamification: number;
+  ttl_ledger_expiry?: number;
+  is_eligible_for_bump: boolean;
+}
+
 @Injectable()
 export class KeeperService {
   private readonly logger = new Logger(KeeperService.name);
@@ -52,8 +74,8 @@ export class KeeperService {
     }
   }
 
-  async getEligibleMarkets(): Promise<MarketEntity[]> {
-    return this.marketRepo.find({
+  async getEligibleMarkets(): Promise<AdminMarketTTLDto[]> {
+    const markets = await this.marketRepo.find({
       where: {
         status: In(['active', 'locked']),
       },
@@ -61,6 +83,120 @@ export class KeeperService {
         lockAt: 'ASC',
       },
     });
+
+    const rpcUrl = this.config.get<string>(
+      'STELLAR_RPC_URL',
+      'https://soroban-testnet.stellar.org',
+    );
+    const contractId = this.config.get<string>('STELLAR_CONTRACT_ID', '');
+    const threshold = Number(
+      this.config.get<string>('KEEPER_TTL_THRESHOLD_LEDGERS', '50000'),
+    );
+
+    if (!contractId) {
+      return markets.map((m) => this.toAdminMarketTtl(m, undefined, false));
+    }
+
+    const rpc = new StellarSdk.rpc.Server(rpcUrl, {
+      allowHttp: rpcUrl.startsWith('http://'),
+    });
+
+    let latestLedgerSeq = 0;
+    try {
+      const latest = await rpc.getLatestLedger();
+      latestLedgerSeq = latest.sequence;
+    } catch (e: any) {
+      this.logger.warn(
+        `Failed to load latest ledger from RPC; TTL will be omitted: ${e?.message ?? e}`,
+      );
+      return markets.map((m) => this.toAdminMarketTtl(m, undefined, false));
+    }
+
+    const contractScAddress = StellarSdk.Address.fromString(contractId).toScAddress();
+    const keysByXdr = new Map<string, MarketEntity>();
+    const ledgerKeys: any[] = [];
+
+    for (const market of markets) {
+      if (!market.onChainId) continue;
+      let u64: bigint;
+      try {
+        u64 = BigInt(market.onChainId);
+      } catch {
+        continue;
+      }
+
+      const storageKey = StellarSdk.xdr.ScVal.scvVec([
+        StellarSdk.nativeToScVal('MarketId', { type: 'symbol' }),
+        StellarSdk.nativeToScVal(u64, { type: 'u64' }),
+      ]);
+
+      const ledgerKey = StellarSdk.xdr.LedgerKey.contractData(
+        new StellarSdk.xdr.LedgerKeyContractData({
+          contract: contractScAddress,
+          key: storageKey,
+          durability: StellarSdk.xdr.ContractDataDurability.persistent(),
+        }),
+      );
+
+      ledgerKeys.push(ledgerKey);
+      keysByXdr.set(ledgerKey.toXDR('base64'), market);
+    }
+
+    let ttlByMarketId = new Map<string, number>();
+    if (ledgerKeys.length) {
+      try {
+        const resp = await rpc.getLedgerEntries(...ledgerKeys);
+        for (const entry of resp.entries ?? []) {
+          const keyXdr = entry.key.toXDR('base64');
+          const market = keysByXdr.get(keyXdr);
+          if (!market) continue;
+          if (typeof entry.liveUntilLedgerSeq !== 'number') continue;
+          const remaining = Math.max(0, entry.liveUntilLedgerSeq - latestLedgerSeq);
+          ttlByMarketId.set(market.id, remaining);
+        }
+      } catch (e: any) {
+        this.logger.warn(
+          `Failed to fetch ledger entries for TTL; TTL will be omitted: ${e?.message ?? e}`,
+        );
+      }
+    }
+
+    return markets.map((m) => {
+      const ttl = ttlByMarketId.get(m.id);
+      const eligible =
+        typeof ttl === 'number' ? ttl <= threshold : false;
+      return this.toAdminMarketTtl(m, ttl, eligible);
+    });
+  }
+
+  private toAdminMarketTtl(
+    m: MarketEntity,
+    ttlLedgerExpiry: number | undefined,
+    eligible: boolean,
+  ): AdminMarketTTLDto {
+    return {
+      id: m.id,
+      title: m.title,
+      description: m.description ?? '',
+      category: (m.category ?? 'ALL') as any,
+      status: m.status as any,
+      image_url: m.imageUrl ?? undefined,
+      total_liquidity: '0',
+      lock_at: m.lockAt instanceof Date ? m.lockAt.toISOString() : (m.lockAt as any),
+      settle_at:
+        m.resolveAt instanceof Date ? m.resolveAt.toISOString() : (m.resolveAt as any),
+      created_at:
+        m.createdAt instanceof Date ? m.createdAt.toISOString() : (m.createdAt as any),
+      resolution_rule: m.resolutionRule ?? '',
+      resolution_source: m.resolutionSource ?? '',
+      oracle_url: m.oracleUrl ?? undefined,
+      contract_address: m.contractAddress ?? undefined,
+      fee_ngo: Number(m.feeNgo ?? 0),
+      fee_platform: Number(m.feePlatform ?? 0),
+      fee_gamification: Number(m.feeGamification ?? 0),
+      ttl_ledger_expiry: ttlLedgerExpiry,
+      is_eligible_for_bump: eligible,
+    };
   }
 
   async batchBumpTTL(marketIds: string[]): Promise<{ hash: string }> {

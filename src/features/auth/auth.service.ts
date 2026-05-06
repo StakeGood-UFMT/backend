@@ -3,6 +3,7 @@ import {
   BadRequestException,
   UnauthorizedException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { JwtService } from '@nestjs/jwt';
 import { Repository } from 'typeorm';
@@ -29,7 +30,30 @@ export class AuthService {
     @InjectRepository(RefreshTokenEntity)
     private readonly refreshRepo: Repository<RefreshTokenEntity>,
     private readonly gateway: StakeGoodGateway,
+    private readonly config: ConfigService,
   ) {}
+
+  private getAdminWallets(): Set<string> {
+    const raw =
+      this.config.get<string>('ADMIN_WALLETS') ??
+      'GCWD3PDC7WSRPRXZQ4A6L724VV2UXSRAOWE2HYLJSSDGUG4AGXTUX5D4';
+
+    const wallets = raw
+      .split(/[\s,;]+/g)
+      .map((w) => w.trim())
+      .filter((w) => w.length === 56 && w.startsWith('G'));
+
+    return new Set(wallets);
+  }
+
+  private async ensureAdminRole(user: UserEntity): Promise<UserEntity> {
+    const adminWallets = this.getAdminWallets();
+    if (!adminWallets.has(user.primaryWallet)) return user;
+    if (user.role === 'admin') return user;
+
+    await this.userRepo.update(user.id, { role: 'admin' });
+    return { ...user, role: 'admin' };
+  }
 
   async generateNonce(wallet: string) {
     if (!wallet || wallet.length !== 56 || !wallet.startsWith('G')) {
@@ -186,8 +210,13 @@ export class AuthService {
       where: { primaryWallet: wallet },
     });
     if (!user) {
-      user = await this.userRepo.save({ primaryWallet: wallet });
+      const adminWallets = this.getAdminWallets();
+      user = await this.userRepo.save({
+        primaryWallet: wallet,
+        ...(adminWallets.has(wallet) ? { role: 'admin' as const } : {}),
+      });
     }
+    user = await this.ensureAdminRole(user);
 
     const refreshTokenExpiresAt = new Date();
     refreshTokenExpiresAt.setDate(refreshTokenExpiresAt.getDate() + 7);

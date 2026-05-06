@@ -72,6 +72,12 @@ export class ProposalEntity {
   @Column({ name: 'rejection_reason', type: 'text', nullable: true })
   rejectionReason?: string;
 
+  @Column({ name: 'reserved_on_chain_id', type: 'bigint', nullable: true })
+  reservedOnChainId?: string;
+
+  @Column({ name: 'market_id', nullable: true })
+  marketId?: string;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

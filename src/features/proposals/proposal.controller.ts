@@ -30,13 +30,29 @@ export class ProposalController {
   }
 
   @Get()
+  @UseGuards(RolesGuard)
+  @Roles('admin')
   async findAll(@Query('status') status?: ProposalStatus) {
     return this.proposalService.findAll(status);
   }
 
+  @Get('mine')
+  async findMine(@Request() req: any, @Query('status') status?: ProposalStatus) {
+    return this.proposalService.findMine(req.user.userId, status);
+  }
+
   @Get(':id')
+  @UseGuards(RolesGuard)
+  @Roles('admin')
   async findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.proposalService.findOne(id);
+  }
+
+  @Post(':id/build-approval')
+  @UseGuards(RolesGuard)
+  @Roles('admin')
+  async buildApproval(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.proposalService.buildApprovalXdr(id, req.user);
   }
 
   @Patch(':id/moderate')

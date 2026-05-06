@@ -8,6 +8,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as StellarSdk from '@stellar/stellar-sdk';
+import { ConfigService } from '@nestjs/config';
 import { UserEntity } from '../../database/entities/user.entity';
 import { MarketEntity } from '../../database/entities/market.entity';
 import { MarketSnapshotEntity } from '../../database/entities/market-snapshot.entity';
@@ -29,7 +30,33 @@ export class TransactionsService {
     private readonly depositRepo: Repository<DepositEntity>,
     @InjectRepository(UserPositionEntity)
     private readonly userPositionRepo: Repository<UserPositionEntity>,
+    private readonly config: ConfigService,
   ) {}
+
+  private getNetworkPassphrase(): string {
+    return this.config.get<string>(
+      'STELLAR_NETWORK_PASSPHRASE',
+      StellarSdk.Networks.TESTNET,
+    );
+  }
+
+  private getRpcServer(): StellarSdk.rpc.Server {
+    const rpcUrl = this.config.get<string>(
+      'STELLAR_RPC_URL',
+      'https://soroban-testnet.stellar.org',
+    );
+    return new StellarSdk.rpc.Server(rpcUrl, {
+      allowHttp: rpcUrl.startsWith('http://'),
+    });
+  }
+
+  private getHorizonServer(): StellarSdk.Horizon.Server {
+    const horizonUrl = this.config.get<string>(
+      'STELLAR_HORIZON_URL',
+      'https://horizon-testnet.stellar.org',
+    );
+    return new StellarSdk.Horizon.Server(horizonUrl);
+  }
 
   async buildPrediction(dto: BuildPredictionDto, jwtUser: any) {
     const user = await this.userRepo.findOne({ where: { id: jwtUser.userId } });
@@ -51,6 +78,14 @@ export class TransactionsService {
       where: { id: dto.market_id },
     });
     if (!market) throw new NotFoundException('Market not found');
+    if (!market.onChainId) {
+      throw new BadRequestException('Market is missing onChainId');
+    }
+    const contractId =
+      market.contractAddress || this.config.get<string>('STELLAR_CONTRACT_ID', '');
+    if (!contractId) {
+      throw new BadRequestException('STELLAR_CONTRACT_ID is not configured');
+    }
 
     // Validation: Market Status and Lock Time
     if (market.status !== 'active') {
@@ -93,12 +128,9 @@ export class TransactionsService {
 
     // Soroban XDR Generation
     // Function: place_prediction(user: Address, market_id: u64, outcome: u32, amount: i128)
-    const contractId =
-      market.contractAddress ||
-      'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4'; // Placeholder if not set
     const amountStroops = BigInt(Math.floor(amount * 10000000)); // 7 decimals for USDC/SAC
 
-    const marketIdU64 = BigInt(market.onChainId || 0);
+    const marketIdU64 = BigInt(market.onChainId);
     const outcomeU32 = dto.outcome === 'YES' ? 1 : 2;
 
     const op = StellarSdk.Operation.invokeHostFunction({
@@ -109,7 +141,7 @@ export class TransactionsService {
           functionName: 'place_prediction',
           args: [
             StellarSdk.nativeToScVal(
-              new StellarSdk.Address(user.primaryWallet),
+              StellarSdk.Address.fromString(user.primaryWallet),
             ),
             StellarSdk.nativeToScVal(marketIdU64, { type: 'u64' }),
             StellarSdk.nativeToScVal(outcomeU32, { type: 'u32' }),
@@ -120,21 +152,59 @@ export class TransactionsService {
       auth: [],
     });
 
-    // Build the transaction (without signing, to be returned as XDR)
-    // Note: We use a dummy sequence '0' as the frontend will typically handle the sequence or fetch it
-    const tx = new StellarSdk.TransactionBuilder(
-      new StellarSdk.Account(user.primaryWallet, '0'),
-      { fee: '10000', networkPassphrase: StellarSdk.Networks.TESTNET },
-    )
+    if (this.config.get<string>('NODE_ENV') === 'test') {
+      const networkPassphrase = this.getNetworkPassphrase();
+      const tx = new StellarSdk.TransactionBuilder(
+        new StellarSdk.Account(user.primaryWallet, '0'),
+        { fee: '10000', networkPassphrase },
+      )
+        .addOperation(op)
+        .setTimeout(StellarSdk.TimeoutInfinite)
+        .build();
+
+      const xdr = tx.toXDR();
+      return {
+        xdr,
+        txHash: tx.hash().toString('hex'),
+        summary: {
+          action: 'place_prediction',
+          market: { id: market.id, title: market.title },
+          outcome: dto.outcome,
+          amount: `${dto.amount} USDC`,
+          implied_probability: impliedProbability.toFixed(3),
+          implied_odds: payoutMultiplier.toFixed(2),
+          potential_win: `${potentialWin.toFixed(2)} USDC`,
+        },
+      };
+    }
+
+    const networkPassphrase = this.getNetworkPassphrase();
+    const horizon = this.getHorizonServer();
+    const rpc = this.getRpcServer();
+
+    const account = await horizon.loadAccount(user.primaryWallet);
+    const tx = new StellarSdk.TransactionBuilder(account, {
+      fee: '10000',
+      networkPassphrase,
+    })
       .addOperation(op)
       .setTimeout(StellarSdk.TimeoutInfinite)
       .build();
 
-    const xdr = tx.toXDR();
+    const sim = await rpc.simulateTransaction(tx);
+    if (StellarSdk.rpc.Api.isSimulationError(sim)) {
+      throw new BadRequestException(sim.error);
+    }
+    if (!StellarSdk.rpc.Api.isSimulationSuccess(sim)) {
+      throw new BadRequestException('Simulation failed');
+    }
+
+    const assembled = StellarSdk.rpc.assembleTransaction(tx, sim).build();
+    const xdr = assembled.toXDR();
 
     return {
       xdr,
-      txHash: tx.hash().toString('hex'),
+      txHash: assembled.hash().toString('hex'),
       summary: {
         action: 'place_prediction',
         market: { id: market.id, title: market.title },
@@ -175,12 +245,27 @@ export class TransactionsService {
   }
 
   async submit(dto: SubmitTransactionDto) {
-    // TODO: Actually submit to Stellar network
-    // For now, return success mock
-    return {
-      success: true,
-      status: 'pending_confirmation',
-      message: 'Transaction received and being processed',
-    };
+    if (this.config.get<string>('NODE_ENV') === 'test') {
+      return { status: 'PENDING', hash: 'test' };
+    }
+    const networkPassphrase = this.getNetworkPassphrase();
+    const rpc = this.getRpcServer();
+
+    let tx: StellarSdk.Transaction;
+    try {
+      tx = StellarSdk.TransactionBuilder.fromXDR(dto.signedXdr, networkPassphrase) as StellarSdk.Transaction;
+    } catch {
+      throw new BadRequestException('Invalid signedXdr');
+    }
+
+    const send = await rpc.sendTransaction(tx);
+    if (send.status === 'ERROR') {
+      const detail =
+        (send as any).errorResult ||
+        (send as any).errorResultXdr ||
+        'Transaction failed';
+      throw new BadRequestException(detail);
+    }
+    return send;
   }
 }
