@@ -241,8 +241,18 @@ export class TransactionsService {
   }
 
   private async checkSpendingLimit(user: UserEntity, amount: number) {
+    const spendingLimit = Number(user.spendingLimitUsd);
+    const spendingWindowDays = Number(user.spendingWindowDays);
+
+    if (!Number.isFinite(spendingLimit) || spendingLimit <= 0) {
+      return;
+    }
+    if (!Number.isFinite(spendingWindowDays) || spendingWindowDays <= 0) {
+      return;
+    }
+
     const windowStart = new Date(
-      Date.now() - user.spendingWindowDays * 24 * 60 * 60 * 1000,
+      Date.now() - spendingWindowDays * 24 * 60 * 60 * 1000,
     );
 
     const result = await this.userPositionRepo
@@ -254,15 +264,15 @@ export class TransactionsService {
       .getRawOne<{ total: string }>();
 
     const totalSpent = parseFloat(result?.total ?? '0');
-    const remaining = Math.max(0, user.spendingLimitUsd - totalSpent);
+    const remaining = Math.max(0, spendingLimit - totalSpent);
 
-    if (totalSpent + amount > user.spendingLimitUsd) {
+    if (totalSpent + amount > spendingLimit) {
       throw new ForbiddenException({
         error: 'SPENDING_LIMIT_EXCEEDED',
-        message: `Spending limit exceeded. Your 30-day limit is ${user.spendingLimitUsd} USDC.`,
+        message: `Spending limit exceeded. Your ${spendingWindowDays}-day limit is ${spendingLimit.toFixed(2)} USDC.`,
         remaining: remaining.toFixed(2),
-        limit: user.spendingLimitUsd.toFixed(2),
-        window_days: user.spendingWindowDays,
+        limit: spendingLimit.toFixed(2),
+        window_days: spendingWindowDays,
       });
     }
   }

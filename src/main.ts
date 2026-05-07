@@ -24,7 +24,24 @@ async function bootstrap() {
     }),
   );
 
-  app.enableCors();
+  const allowedOrigins = (
+    process.env.CORS_ORIGINS ??
+    'http://localhost:4200,http://127.0.0.1:4200'
+  )
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  app.enableCors({
+    origin: (origin, cb) => {
+      if (!origin) return cb(null, true);
+      if (allowedOrigins.includes(origin)) return cb(null, true);
+      return cb(null, false);
+    },
+    credentials: true,
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  });
   app.useWebSocketAdapter(new WsAdapter(app));
 
   const port = process.env.PORT ?? 3000;
