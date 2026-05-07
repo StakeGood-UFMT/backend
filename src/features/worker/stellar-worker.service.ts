@@ -347,6 +347,53 @@ export class StellarWorkerService implements OnModuleInit, OnModuleDestroy {
             outcome: parsed.outcome,
           });
 
+          {
+            const feeNgo = Number(resolvedMarket?.feeNgo ?? 0);
+            const feePlatform = Number(resolvedMarket?.feePlatform ?? 0);
+            const feeGamification = Number(resolvedMarket?.feeGamification ?? 0);
+            const totalFeePct = Math.max(0, feeNgo + feePlatform + feeGamification);
+
+            const allPositions = await manager.find(UserPositionEntity, {
+              where: { marketId: parsed.marketId },
+            });
+
+            const positionsForPayout = allPositions.filter(
+              (p) => p.status !== 'cancelled' && p.status !== 'claimed',
+            );
+
+            const yesPool = positionsForPayout
+              .filter((p) => p.outcome === 'YES')
+              .reduce((sum, p) => sum + Number(p.amountStaked), 0);
+            const noPool = positionsForPayout
+              .filter((p) => p.outcome === 'NO')
+              .reduce((sum, p) => sum + Number(p.amountStaked), 0);
+
+            const winningPool = parsed.outcome === 'YES' ? yesPool : noPool;
+            const losingPool = parsed.outcome === 'YES' ? noPool : yesPool;
+            const totalFeeAmount = losingPool * totalFeePct;
+            const netLosingPool = Math.max(0, losingPool - totalFeeAmount);
+
+            const resolvedAt = new Date();
+            const updates = positionsForPayout.map((p) => {
+              const invested = Number(p.amountStaked);
+              const profit =
+                p.outcome === parsed.outcome && winningPool > 0
+                  ? (netLosingPool * invested) / winningPool
+                  : 0;
+              const payout = p.outcome === parsed.outcome ? invested + profit : 0;
+              return manager.save(UserPositionEntity, {
+                ...p,
+                status: 'resolved',
+                resolvedAt,
+                payoutAmount: Number(payout.toFixed(8)),
+              });
+            });
+
+            if (updates.length) {
+              await Promise.all(updates);
+            }
+          }
+
           // Notify participants
           const positions = await manager.find(UserPositionEntity, {
             where: { marketId: parsed.marketId },

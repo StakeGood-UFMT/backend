@@ -26,12 +26,13 @@ export class MarketsController {
     let daysNum = days ? +days : 7;
 
     if (range) {
+      if (range === '1H') daysNum = 0;
       if (range === '1D') daysNum = 1;
       else if (range === '1W') daysNum = 7;
       else if (range === 'ALL') daysNum = 365; // Arbitrary large number for ALL
     }
 
-    return this.marketsService.getHistory(id, interval, daysNum);
+    return this.marketsService.getHistory(id, range, interval, daysNum);
   }
 
   @Get(':id/positions')
@@ -45,5 +46,10 @@ export class MarketsController {
       limit ? Number(limit) : undefined,
       offset ? Number(offset) : undefined,
     );
+  }
+
+  @Get(':id/results')
+  getResults(@Param('id') id: string) {
+    return this.marketsService.getResults(id);
   }
 }

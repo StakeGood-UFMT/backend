@@ -229,6 +229,12 @@ export class AdminService {
   async resolveMarket(id: string, outcome: 'YES' | 'NO', admin: AdminContext) {
     const market = await this.marketRepo.findOne({ where: { id } });
     if (!market) throw new NotFoundException('Market not found');
+    if (!(market.lockAt instanceof Date) || !Number.isFinite(market.lockAt.getTime())) {
+      throw new BadRequestException('Market has no valid lock date');
+    }
+    if (new Date() < market.lockAt) {
+      throw new BadRequestException('Market is not locked yet');
+    }
 
     const contractId =
       market.contractAddress ||
@@ -238,6 +244,7 @@ export class AdminService {
       );
     const marketIdU64 = BigInt(market.onChainId || 0);
     const outcomeU32 = outcome === 'YES' ? 1 : 2;
+    const oracleAddr = StellarSdk.Address.fromString(admin.wallet);
 
     const op = StellarSdk.Operation.invokeHostFunction({
       func: StellarSdk.xdr.HostFunction.hostFunctionTypeInvokeContract(
@@ -246,6 +253,7 @@ export class AdminService {
             StellarSdk.Address.fromString(contractId).toScAddress(),
           functionName: 'resolve_market',
           args: [
+            StellarSdk.nativeToScVal(oracleAddr),
             StellarSdk.nativeToScVal(marketIdU64, { type: 'u64' }),
             StellarSdk.nativeToScVal(outcomeU32, { type: 'u32' }),
           ],
@@ -254,7 +262,8 @@ export class AdminService {
       auth: [],
     });
 
-    const xdr = this.buildXdr(admin.wallet, op);
+    const built = await this.buildSimulatedXdr(admin.wallet, op);
+    const xdr = built.xdr;
 
     await this.dataSource.transaction(async (manager) => {
       await manager.save(TxIntentEntity, {
@@ -273,7 +282,7 @@ export class AdminService {
       });
     });
 
-    return { xdr, action: 'RESOLVE_MARKET' };
+    return { xdr, txHash: built.txHash, action: 'RESOLVE_MARKET' };
   }
 
   async cancelMarket(id: string, admin: AdminContext) {
