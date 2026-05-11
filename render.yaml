@@ -35,10 +35,18 @@ services:
         fromDatabase:
           name: stakegood-db
           property: connectionString
+      - key: USE_CLOUDSQL
+        value: "true"
       - key: JWT_SECRET
         generateValue: true
       - key: API_PREFIX
         value: api/v1
+      - key: STELLAR_RPC_URL
+        value: https://soroban-testnet.stellar.org
+      - key: STELLAR_NETWORK_PASSPHRASE
+        value: Test SDF Network ; September 2015
+      - key: STELLAR_CONTRACT_ID
+        value: CCNFHZIL6MSQQAGD7MUDXSEKYDGI3SNWSD7RWKCJRIILJHQF7QFXLDFI
 
 databases:
   - name: stakegood-db
