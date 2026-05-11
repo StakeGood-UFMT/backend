@@ -40,7 +40,7 @@ export class NgoEntity {
   @Column({ name: 'verified_by', nullable: true })
   verifiedBy?: string;
 
-  @Column({ name: 'wallet_address', length: 56, unique: true })
+  @Column({ name: 'wallet_address', length: 56 })
   walletAddress: string;
 
   @Column({ length: 500, nullable: true })

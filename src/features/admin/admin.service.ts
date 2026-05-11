@@ -91,6 +91,15 @@ export class AdminService {
     return Math.max(0, Math.min(10_000, bps));
   }
 
+  private parseAddress(address: string, label: string): StellarSdk.Address {
+    try {
+      if (!address) throw new Error('Address is empty');
+      return StellarSdk.Address.fromString(address);
+    } catch (e) {
+      throw new BadRequestException(`Invalid Stellar address for ${label}: ${address}`);
+    }
+  }
+
   private buildFeesScVal(feeNgoBps: number, feePlatformBps: number, feeGamificationBps: number) {
     // Important: Soroban requires map keys to be sorted for host conversion.
     // Keys sorted lexicographically: fee_ngo, gamification, platform
@@ -175,7 +184,7 @@ export class AdminService {
 
   private async getOnChainMarket(contractId: string, marketId: bigint): Promise<any | null> {
     const rpc = this.getRpcServer();
-    const contractScAddress = StellarSdk.Address.fromString(contractId).toScAddress();
+    const contractScAddress = this.parseAddress(contractId, 'contract').toScAddress();
 
     const storageKey = StellarSdk.xdr.ScVal.scvVec([
       StellarSdk.nativeToScVal('MarketId', { type: 'symbol' }),
@@ -267,9 +276,9 @@ export class AdminService {
     const assetContractId = params.assetContractId ?? this.getAssetContractId();
 
     const lockTs = BigInt(Math.floor(params.lockAt.getTime() / 1000));
-    const adminAddr = StellarSdk.Address.fromString(params.adminWallet);
-    const oracleAddr = StellarSdk.Address.fromString(oracleWallet);
-    const assetAddr = StellarSdk.Address.fromString(assetContractId);
+    const adminAddr = this.parseAddress(params.adminWallet, 'admin wallet');
+    const oracleAddr = this.parseAddress(oracleWallet, 'oracle wallet');
+    const assetAddr = this.parseAddress(assetContractId, 'asset contract');
     const ngoCandidatesRaw = Array.isArray(params.ngoCandidateIds)
       ? params.ngoCandidateIds
       : [];
@@ -290,7 +299,7 @@ export class AdminService {
     const op = StellarSdk.Operation.invokeHostFunction({
       func: StellarSdk.xdr.HostFunction.hostFunctionTypeInvokeContract(
         new StellarSdk.xdr.InvokeContractArgs({
-          contractAddress: StellarSdk.Address.fromString(contractId).toScAddress(),
+          contractAddress: this.parseAddress(contractId, 'contract').toScAddress(),
           functionName: 'create_market',
           args: [
             StellarSdk.nativeToScVal(adminAddr),
@@ -320,13 +329,13 @@ export class AdminService {
     ngoWallet: string;
   }): Promise<{ xdr: string; txHash: string; onChainId: string }> {
     const contractId = this.getContractId();
-    const adminAddr = StellarSdk.Address.fromString(params.adminWallet);
-    const ngoAddr = StellarSdk.Address.fromString(params.ngoWallet);
+    const adminAddr = this.parseAddress(params.adminWallet, 'admin wallet');
+    const ngoAddr = this.parseAddress(params.ngoWallet, 'NGO wallet');
 
     const op = StellarSdk.Operation.invokeHostFunction({
       func: StellarSdk.xdr.HostFunction.hostFunctionTypeInvokeContract(
         new StellarSdk.xdr.InvokeContractArgs({
-          contractAddress: StellarSdk.Address.fromString(contractId).toScAddress(),
+          contractAddress: this.parseAddress(contractId, 'contract').toScAddress(),
           functionName: 'add_ngo',
           args: [
             StellarSdk.nativeToScVal(adminAddr),
@@ -409,13 +418,13 @@ export class AdminService {
       );
     const marketIdU64 = BigInt(market.onChainId);
     const outcomeU32 = outcome === 'YES' ? 1 : 2;
-    const oracleAddr = StellarSdk.Address.fromString(admin.wallet);
+    const oracleAddr = this.parseAddress(admin.wallet, 'admin/oracle wallet');
 
     const op = StellarSdk.Operation.invokeHostFunction({
       func: StellarSdk.xdr.HostFunction.hostFunctionTypeInvokeContract(
         new StellarSdk.xdr.InvokeContractArgs({
           contractAddress:
-            StellarSdk.Address.fromString(contractId).toScAddress(),
+            this.parseAddress(contractId, 'contract').toScAddress(),
           functionName: 'resolve_market',
           args: [
             StellarSdk.nativeToScVal(oracleAddr),
@@ -512,7 +521,7 @@ export class AdminService {
       func: StellarSdk.xdr.HostFunction.hostFunctionTypeInvokeContract(
         new StellarSdk.xdr.InvokeContractArgs({
           contractAddress:
-            StellarSdk.Address.fromString(contractId).toScAddress(),
+            this.parseAddress(contractId, 'contract').toScAddress(),
           functionName: 'cancel_market',
           args: [StellarSdk.nativeToScVal(marketIdU64, { type: 'u64' })],
         }),
@@ -554,13 +563,13 @@ export class AdminService {
         'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4',
       );
     const marketIdU64 = BigInt(market.onChainId);
-    const adminAddr = StellarSdk.Address.fromString(admin.wallet);
+    const adminAddr = this.parseAddress(admin.wallet, 'admin wallet');
 
     const op = StellarSdk.Operation.invokeHostFunction({
       func: StellarSdk.xdr.HostFunction.hostFunctionTypeInvokeContract(
         new StellarSdk.xdr.InvokeContractArgs({
           contractAddress:
-            StellarSdk.Address.fromString(contractId).toScAddress(),
+            this.parseAddress(contractId, 'contract').toScAddress(),
           functionName: 'distribute_impact_funds',
           args: [
             StellarSdk.nativeToScVal(adminAddr),

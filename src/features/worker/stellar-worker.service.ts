@@ -403,17 +403,14 @@ export class StellarWorkerService implements OnModuleInit, OnModuleDestroy {
             const onChainIdSafe = Number.isFinite(onChainId) ? onChainId : undefined;
 
             const existing = await manager.findOne(NgoEntity, {
-              where: [
-                ...(onChainIdSafe !== undefined ? [{ onChainId: onChainIdSafe }] : []),
-                { walletAddress: parsed.walletAddress },
-              ],
+              where: onChainIdSafe !== undefined ? { onChainId: onChainIdSafe } : { walletAddress: parsed.walletAddress },
             });
 
             if (existing) {
               existing.walletAddress = parsed.walletAddress;
               if (onChainIdSafe !== undefined) existing.onChainId = onChainIdSafe;
               if (parsed.name) existing.name = parsed.name;
-              if (!existing.slug) existing.slug = parsed.walletAddress;
+              if (!existing.slug) existing.slug = this.generateSlug(existing.name, onChainIdSafe ?? 0);
               if (!existing.social) existing.social = {};
               if (!existing.impactMetrics) existing.impactMetrics = {};
               await manager.save(NgoEntity, existing);
@@ -424,7 +421,7 @@ export class StellarWorkerService implements OnModuleInit, OnModuleDestroy {
                   onChainId: onChainIdSafe,
                   walletAddress: parsed.walletAddress,
                   name: parsed.name ?? `NGO ${parsed.ngoId}`,
-                  slug: parsed.walletAddress,
+                  slug: this.generateSlug(parsed.name ?? `NGO ${parsed.ngoId}`, onChainIdSafe ?? 0),
                   verified: false,
                   social: {},
                   impactMetrics: {},
@@ -638,5 +635,14 @@ export class StellarWorkerService implements OnModuleInit, OnModuleDestroy {
 
   private sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private generateSlug(name: string, id: number): string {
+    const base = name
+      .toLowerCase()
+      .replace(/[^\w\s-]/g, '')
+      .replace(/[\s_]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+    return `${base}-${id}`;
   }
 }

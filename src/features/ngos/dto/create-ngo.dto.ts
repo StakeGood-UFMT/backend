@@ -5,6 +5,7 @@ import {
   IsUrl,
   IsObject,
   MaxLength,
+  Matches,
 } from 'class-validator';
 
 export class CreateNgoDto {
@@ -30,6 +31,7 @@ export class CreateNgoDto {
 
   @IsString()
   @MaxLength(56)
+  @Matches(/^G[A-Z2-7]{55}$/, { message: 'Invalid Stellar wallet address format' })
   walletAddress: string;
 
   @IsUrl()
