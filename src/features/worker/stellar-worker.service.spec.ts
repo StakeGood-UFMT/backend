@@ -39,6 +39,9 @@ describe('StellarWorkerService', () => {
     upsert: jest.fn().mockResolvedValue(undefined),
     update: jest.fn().mockResolvedValue(undefined),
     insert: jest.fn().mockResolvedValue(undefined),
+    findOne: jest.fn().mockResolvedValue(null),
+    save: jest.fn().mockResolvedValue(undefined),
+    create: jest.fn((_entity: any, data: any) => data),
   };
 
   const mockDataSource = {
@@ -191,6 +194,7 @@ describe('StellarWorkerService', () => {
       const result = (service as any).parseContractEvent(event);
       expect(result).toEqual({
         kind: 'NGO:Registered',
+        ngoId: '0',
         walletAddress: 'GABC123',
         name: 'TestNGO',
       });
@@ -199,12 +203,12 @@ describe('StellarWorkerService', () => {
     it('parseia NGO:Deactivated corretamente', () => {
       const event = makeEvent({
         topic: ['NGO', 'Deactivated'],
-        value: JSON.stringify({ wallet_address: 'GABC123' }),
+        value: JSON.stringify(7),
       });
       const result = (service as any).parseContractEvent(event);
       expect(result).toEqual({
         kind: 'NGO:Deactivated',
-        walletAddress: 'GABC123',
+        ngoId: '7',
       });
     });
 

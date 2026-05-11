@@ -4,6 +4,8 @@ import {
   IsEnum,
   IsNumberString,
   Matches,
+  IsInt,
+  Min,
 } from 'class-validator';
 
 export class BuildPredictionDto {
@@ -18,4 +20,8 @@ export class BuildPredictionDto {
     message: 'amount must be a positive decimal',
   })
   amount: string;
+
+  @IsInt()
+  @Min(1)
+  ngo_id: number;
 }

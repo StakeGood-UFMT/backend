@@ -258,6 +258,7 @@ export class AdminService {
     feeNgoBps: number;
     feePlatformBps: number;
     feeGamificationBps: number;
+    ngoCandidateIds: number[];
     oracleWallet?: string;
     assetContractId?: string;
   }): Promise<{ xdr: string; txHash: string; onChainId: string }> {
@@ -269,6 +270,22 @@ export class AdminService {
     const adminAddr = StellarSdk.Address.fromString(params.adminWallet);
     const oracleAddr = StellarSdk.Address.fromString(oracleWallet);
     const assetAddr = StellarSdk.Address.fromString(assetContractId);
+    const ngoCandidatesRaw = Array.isArray(params.ngoCandidateIds)
+      ? params.ngoCandidateIds
+      : [];
+    if (ngoCandidatesRaw.length !== 3) {
+      throw new BadRequestException('ngoCandidateIds must have exactly 3 NGO ids');
+    }
+    const ngoCandidates = ngoCandidatesRaw.map((n) => Number(n));
+    if (ngoCandidates.some((n) => !Number.isInteger(n) || n <= 0)) {
+      throw new BadRequestException('ngoCandidateIds must be positive integers');
+    }
+    if (new Set(ngoCandidates).size !== 3) {
+      throw new BadRequestException('ngoCandidateIds must be unique');
+    }
+    const ngoCandidatesScVal = StellarSdk.xdr.ScVal.scvVec(
+      ngoCandidates.map((id) => StellarSdk.nativeToScVal(id, { type: 'u32' })),
+    );
 
     const op = StellarSdk.Operation.invokeHostFunction({
       func: StellarSdk.xdr.HostFunction.hostFunctionTypeInvokeContract(
@@ -286,6 +303,7 @@ export class AdminService {
               params.feePlatformBps,
               params.feeGamificationBps,
             ),
+            ngoCandidatesScVal,
           ],
         }),
       ),
@@ -294,6 +312,34 @@ export class AdminService {
 
     const built = await this.buildSimulatedXdr(params.adminWallet, op);
     return { ...built, onChainId: params.marketId.toString() };
+  }
+
+  async buildAddNgoXdr(params: {
+    adminWallet: string;
+    ngoId: number;
+    ngoWallet: string;
+  }): Promise<{ xdr: string; txHash: string; onChainId: string }> {
+    const contractId = this.getContractId();
+    const adminAddr = StellarSdk.Address.fromString(params.adminWallet);
+    const ngoAddr = StellarSdk.Address.fromString(params.ngoWallet);
+
+    const op = StellarSdk.Operation.invokeHostFunction({
+      func: StellarSdk.xdr.HostFunction.hostFunctionTypeInvokeContract(
+        new StellarSdk.xdr.InvokeContractArgs({
+          contractAddress: StellarSdk.Address.fromString(contractId).toScAddress(),
+          functionName: 'add_ngo',
+          args: [
+            StellarSdk.nativeToScVal(adminAddr),
+            StellarSdk.nativeToScVal(params.ngoId, { type: 'u32' }),
+            StellarSdk.nativeToScVal(ngoAddr),
+          ],
+        }),
+      ),
+      auth: [],
+    });
+
+    const built = await this.buildSimulatedXdr(params.adminWallet, op);
+    return { ...built, onChainId: params.ngoId.toString() };
   }
 
   private async getNextMarketId(): Promise<bigint> {
@@ -320,6 +366,7 @@ export class AdminService {
       feeNgoBps,
       feePlatformBps,
       feeGamificationBps,
+      ngoCandidateIds: dto.ngoCandidateIds ?? [],
     });
 
     await this.dataSource.transaction(async (manager) => {
@@ -495,13 +542,10 @@ export class AdminService {
     return { xdr, txHash: built.txHash, action: 'CANCEL_MARKET' };
   }
 
-  async distributeImpact(id: string, winnerNgoId: number, admin: AdminContext) {
+  async distributeImpact(id: string, admin: AdminContext) {
     const market = await this.marketRepo.findOne({ where: { id } });
     if (!market) throw new NotFoundException('Market not found');
     if (!market.onChainId) throw new BadRequestException('Market is missing onChainId');
-    if (!Number.isInteger(winnerNgoId) || winnerNgoId <= 0) {
-      throw new BadRequestException('winner_ngo_id must be a positive integer');
-    }
 
     const contractId =
       market.contractAddress ||
@@ -521,7 +565,6 @@ export class AdminService {
           args: [
             StellarSdk.nativeToScVal(adminAddr),
             StellarSdk.nativeToScVal(marketIdU64, { type: 'u64' }),
-            StellarSdk.nativeToScVal(winnerNgoId, { type: 'u32' }),
           ],
         }),
       ),

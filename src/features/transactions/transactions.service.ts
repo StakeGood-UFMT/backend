@@ -150,11 +150,21 @@ export class TransactionsService {
     const potentialWin = amount * payoutMultiplier;
 
     // Soroban XDR Generation
-    // Function: place_prediction(user: Address, market_id: u64, outcome: u32, amount: i128)
+    // Function: place_prediction(user: Address, market_id: u64, outcome: u32, amount: i128, ngo_id: u32)
     const amountStroops = BigInt(Math.floor(amount * 10000000)); // 7 decimals for USDC/SAC
 
     const marketIdU64 = BigInt(market.onChainId);
     const outcomeU32 = dto.outcome === 'YES' ? 1 : 2;
+    const ngoIdU32 = Number(dto.ngo_id);
+    if (!Number.isInteger(ngoIdU32) || ngoIdU32 <= 0) {
+      throw new BadRequestException('ngo_id must be a positive integer');
+    }
+    const candidates = Array.isArray((market as any).ngoCandidateIds)
+      ? (market as any).ngoCandidateIds.map((n: any) => Number(n))
+      : [];
+    if (candidates.length && !candidates.includes(ngoIdU32)) {
+      throw new BadRequestException('ngo_id is not allowed for this market');
+    }
 
     const op = StellarSdk.Operation.invokeHostFunction({
       func: StellarSdk.xdr.HostFunction.hostFunctionTypeInvokeContract(
@@ -169,6 +179,7 @@ export class TransactionsService {
             StellarSdk.nativeToScVal(marketIdU64, { type: 'u64' }),
             StellarSdk.nativeToScVal(outcomeU32, { type: 'u32' }),
             StellarSdk.nativeToScVal(amountStroops, { type: 'i128' }),
+            StellarSdk.nativeToScVal(ngoIdU32, { type: 'u32' }),
           ],
         }),
       ),
@@ -345,6 +356,8 @@ export class TransactionsService {
         : String((send as any).hash ?? tx.hash().toString('hex'));
 
     const amountNumber = dto.amount ? Number(dto.amount) : NaN;
+    const ngoOnChainId =
+      dto.ngo_id !== undefined && dto.ngo_id !== null ? Number(dto.ngo_id) : NaN;
     const canPersistPosition =
       jwtUser?.userId &&
       dto.market_id &&
@@ -360,6 +373,7 @@ export class TransactionsService {
         amountStaked: amountNumber,
         status: 'pending',
         txHash,
+        ngoOnChainId: Number.isFinite(ngoOnChainId) ? ngoOnChainId : undefined,
       });
     }
 

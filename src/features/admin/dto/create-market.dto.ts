@@ -5,6 +5,12 @@ import {
   IsNumber,
   IsOptional,
   IsUrl,
+  IsArray,
+  ArrayMinSize,
+  ArrayMaxSize,
+  ArrayUnique,
+  IsInt,
+  Min,
 } from 'class-validator';
 
 export class CreateMarketDto {
@@ -59,4 +65,12 @@ export class CreateMarketDto {
   @IsString()
   @IsOptional()
   resolutionSource?: string;
+
+  @IsArray()
+  @ArrayMinSize(3)
+  @ArrayMaxSize(3)
+  @ArrayUnique()
+  @IsInt({ each: true })
+  @Min(1, { each: true })
+  ngoCandidateIds: number[];
 }
