@@ -142,14 +142,11 @@ export class NgoProposalsService {
 
       const onChainId = proposal.reservedOnChainId;
       const existingNgo = await this.ngoRepo.findOne({
-        where: [
-          { walletAddress: proposal.walletAddress },
-          { onChainId },
-        ],
+        where: { onChainId },
       });
 
       const ngo = existingNgo ?? this.ngoRepo.create({
-        slug: proposal.walletAddress,
+        slug: this.generateSlug(proposal.name, onChainId),
         social: {},
         impactMetrics: {},
       });
@@ -185,5 +182,14 @@ export class NgoProposalsService {
     await this.proposalRepo.save(proposal);
 
     return { status: proposal.status };
+  }
+
+  private generateSlug(name: string, id: number): string {
+    const base = name
+      .toLowerCase()
+      .replace(/[^\w\s-]/g, '')
+      .replace(/[\s_]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+    return `${base}-${id}`;
   }
 }

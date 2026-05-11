@@ -58,6 +58,15 @@ export class TransactionsService {
     return new StellarSdk.Horizon.Server(horizonUrl);
   }
 
+  private parseAddress(address: string, label: string): StellarSdk.Address {
+    try {
+      if (!address) throw new Error('Address is empty');
+      return StellarSdk.Address.fromString(address);
+    } catch (e) {
+      throw new BadRequestException(`Invalid Stellar address for ${label}: ${address}`);
+    }
+  }
+
   async buildPrediction(dto: BuildPredictionDto, jwtUser: any) {
     const user = await this.userRepo.findOne({ where: { id: jwtUser.userId } });
     if (!user) throw new NotFoundException('User not found');
@@ -170,11 +179,11 @@ export class TransactionsService {
       func: StellarSdk.xdr.HostFunction.hostFunctionTypeInvokeContract(
         new StellarSdk.xdr.InvokeContractArgs({
           contractAddress:
-            StellarSdk.Address.fromString(contractId).toScAddress(),
+            this.parseAddress(contractId, 'contract').toScAddress(),
           functionName: 'place_prediction',
           args: [
             StellarSdk.nativeToScVal(
-              StellarSdk.Address.fromString(user.primaryWallet),
+              this.parseAddress(user.primaryWallet, 'user wallet'),
             ),
             StellarSdk.nativeToScVal(marketIdU64, { type: 'u64' }),
             StellarSdk.nativeToScVal(outcomeU32, { type: 'u32' }),
