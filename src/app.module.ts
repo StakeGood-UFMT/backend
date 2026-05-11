@@ -45,10 +45,15 @@ import { LegalModule } from './features/legal/legal.module';
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService) => {
-        const url =
-          process.env.DATABASE_URL || config.get<string>('DATABASE_URL');
+        const useCloudSql =
+          (process.env.USE_CLOUDSQL ?? config.get<string>('USE_CLOUDSQL')) ===
+          'true';
 
-        if (url) {
+        const url = useCloudSql
+          ? process.env.DATABASE_URL || config.get<string>('DATABASE_URL')
+          : undefined;
+
+        if (useCloudSql) {
           console.log('📦 Database: Connecting via DATABASE_URL');
         } else {
           console.log(
@@ -60,8 +65,9 @@ import { LegalModule } from './features/legal/legal.module';
           config.get<string>('DB_SYNCHRONIZE') === 'true' ||
           config.get<string>('NODE_ENV') !== 'production';
         const logging = config.get<string>('NODE_ENV') === 'development';
-        const ssl =
-          config.get<string>('NODE_ENV') === 'production'
+        const ssl = useCloudSql
+          ? { rejectUnauthorized: false }
+          : config.get<string>('NODE_ENV') === 'production'
             ? { rejectUnauthorized: false }
             : false;
 
@@ -84,7 +90,7 @@ import { LegalModule } from './features/legal/legal.module';
           return {
             ...baseConfig,
             host: config.get<string>('DB_HOST', 'localhost'),
-            port: config.get<number>('DB_PORT', 5432),
+            port: Number(config.get<string>('DB_PORT', '5432')),
             username: config.get<string>('DB_USER', 'stakegood'),
             password: config.get<string>('DB_PASSWORD', 'stakegood_pass'),
             database: config.get<string>('DB_NAME', 'stakegood_dev'),

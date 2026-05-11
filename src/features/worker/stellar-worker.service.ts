@@ -219,7 +219,33 @@ export class StellarWorkerService implements OnModuleInit, OnModuleDestroy {
 
     if (!namespace || !action) return null;
 
-    let body: Record<string, any> = {};
+    const toBigintLikeString = (value: unknown): string | null => {
+      if (value === null || value === undefined) return null;
+      if (typeof value === 'bigint') return value.toString();
+      if (typeof value === 'number' && Number.isFinite(value))
+        return Math.trunc(value).toString();
+      if (typeof value === 'string') {
+        const s = value.trim();
+        return s ? s : null;
+      }
+      return null;
+    };
+
+    const toNumberLike = (value: unknown): number | null => {
+      if (value === null || value === undefined) return null;
+      if (typeof value === 'number' && Number.isFinite(value)) return value;
+      if (typeof value === 'bigint') return Number(value);
+      if (typeof value === 'string' && value.trim()) {
+        const n = Number(value);
+        return Number.isFinite(n) ? n : null;
+      }
+      return null;
+    };
+
+    const asTuple = (value: unknown): unknown[] | null =>
+      Array.isArray(value) ? value : null;
+
+    let body: any = {};
     try {
       body =
         typeof event.value === 'string' ? JSON.parse(event.value) : event.value;
@@ -227,47 +253,61 @@ export class StellarWorkerService implements OnModuleInit, OnModuleDestroy {
       return null;
     }
 
-    if (namespace === 'NGO' && action === 'Registered') {
-      return {
-        kind: 'NGO:Registered',
-        walletAddress: body.wallet_address ?? '',
-        name: body.name ?? '',
-      };
-    }
-
-    if (namespace === 'NGO' && action === 'Deactivated') {
-      return {
-        kind: 'NGO:Deactivated',
-        walletAddress: body.wallet_address ?? '',
-      };
-    }
-
-    if (namespace === 'Market' && action === 'Created') {
-      return {
-        kind: 'Market:Created',
-        marketId: body.market_id ?? '',
-        title: body.title ?? '',
-        lockAt: body.lock_at ? new Date(body.lock_at) : new Date(),
-        resolveAt: body.resolve_at ? new Date(body.resolve_at) : new Date(),
-        createdBy: body.created_by ?? '',
-      };
-    }
-
     if (namespace === 'Market' && action === 'Resolved') {
+      const tuple = asTuple(body);
+      const marketId =
+        toBigintLikeString(tuple?.[0]) ??
+        toBigintLikeString(body?.market_id) ??
+        toBigintLikeString(body?.marketId) ??
+        null;
+      if (!marketId) return null;
+
+      const outcomeRaw =
+        toNumberLike(tuple?.[1]) ??
+        toNumberLike(body?.winning_outcome) ??
+        toNumberLike(body?.outcome) ??
+        null;
+      if (!outcomeRaw) return null;
+
       return {
         kind: 'Market:Resolved',
-        marketId: body.market_id ?? '',
-        outcome: body.outcome === 1 ? 'YES' : 'NO',
+        marketId,
+        outcome: outcomeRaw === 1 ? 'YES' : 'NO',
       };
     }
 
     if (namespace === 'Impact' && action === 'Distributed') {
+      const tuple = asTuple(body);
+      const marketId =
+        toBigintLikeString(tuple?.[0]) ??
+        toBigintLikeString(body?.market_id) ??
+        toBigintLikeString(body?.marketId) ??
+        null;
+      if (!marketId) return null;
+
+      const ngoId =
+        toBigintLikeString(tuple?.[1]) ??
+        toBigintLikeString(body?.ngo_id) ??
+        toBigintLikeString(body?.winner_ngo_id) ??
+        null;
+      if (!ngoId) return null;
+
+      const amount =
+        toBigintLikeString(tuple?.[2]) ??
+        toBigintLikeString(body?.amount) ??
+        toBigintLikeString(body?.total_amount) ??
+        '0';
+
       return {
         kind: 'Impact:Distributed',
-        marketId: body.market_id ?? '',
-        ngoId: body.ngo_id ?? '',
-        amount: body.amount ?? '0',
+        marketId,
+        ngoId,
+        amount,
       };
+    }
+
+    if (namespace === 'NGO' || namespace === 'Market') {
+      return null;
     }
 
     return null;
@@ -330,31 +370,42 @@ export class StellarWorkerService implements OnModuleInit, OnModuleDestroy {
           break;
 
         case 'Market:Resolved':
-          const resolvedMarket = await manager.findOne(MarketEntity, {
-            where: { id: parsed.marketId },
-          });
-          const title = resolvedMarket?.title || parsed.marketId;
-
-          await manager.update(
-            MarketEntity,
-            { id: parsed.marketId },
-            {
-              status: 'resolved',
-              outcome: parsed.outcome as any,
-            },
-          );
-          this.gateway.emitMarketResolved(parsed.marketId, {
-            outcome: parsed.outcome,
-          });
-
           {
-            const feeNgo = Number(resolvedMarket?.feeNgo ?? 0);
-            const feePlatform = Number(resolvedMarket?.feePlatform ?? 0);
-            const feeGamification = Number(resolvedMarket?.feeGamification ?? 0);
-            const totalFeePct = Math.max(0, feeNgo + feePlatform + feeGamification);
+            const resolvedMarket = await manager.findOne(MarketEntity, {
+              where: { onChainId: parsed.marketId },
+            });
+            if (!resolvedMarket) {
+              this.logger.warn(
+                `Evento Market:Resolved recebido para onChainId=${parsed.marketId}, mas não existe market off-chain com esse onChainId.`,
+              );
+              break;
+            }
+
+            const marketUuid = resolvedMarket.id;
+            const title = resolvedMarket.title || marketUuid;
+
+            await manager.update(
+              MarketEntity,
+              { id: marketUuid },
+              {
+                status: 'resolved',
+                outcome: parsed.outcome as any,
+              },
+            );
+            this.gateway.emitMarketResolved(marketUuid, {
+              outcome: parsed.outcome,
+            });
+
+            const feeNgo = Number(resolvedMarket.feeNgo ?? 0);
+            const feePlatform = Number(resolvedMarket.feePlatform ?? 0);
+            const feeGamification = Number(resolvedMarket.feeGamification ?? 0);
+            const totalFeePct = Math.max(
+              0,
+              feeNgo + feePlatform + feeGamification,
+            );
 
             const allPositions = await manager.find(UserPositionEntity, {
-              where: { marketId: parsed.marketId },
+              where: { marketId: marketUuid },
             });
 
             const positionsForPayout = allPositions.filter(
@@ -380,7 +431,8 @@ export class StellarWorkerService implements OnModuleInit, OnModuleDestroy {
                 p.outcome === parsed.outcome && winningPool > 0
                   ? (netLosingPool * invested) / winningPool
                   : 0;
-              const payout = p.outcome === parsed.outcome ? invested + profit : 0;
+              const payout =
+                p.outcome === parsed.outcome ? invested + profit : 0;
               return manager.save(UserPositionEntity, {
                 ...p,
                 status: 'resolved',
@@ -389,45 +441,49 @@ export class StellarWorkerService implements OnModuleInit, OnModuleDestroy {
               });
             });
 
-            if (updates.length) {
-              await Promise.all(updates);
+            if (updates.length) await Promise.all(updates);
+
+            const positions = await manager.find(UserPositionEntity, {
+              where: { marketId: marketUuid },
+            });
+
+            for (const pos of positions) {
+              const isWinner = pos.outcome === parsed.outcome;
+              const message = isWinner
+                ? `Congratulations! You won on market "${title}".`
+                : `The market "${title}" has been resolved. You lost your stake.`;
+
+              await this.notificationService.createNotification(
+                pos.userId,
+                message,
+                isWinner ? 'profit_credited' : 'market_resolved',
+              );
             }
-          }
-
-          // Notify participants
-          const positions = await manager.find(UserPositionEntity, {
-            where: { marketId: parsed.marketId },
-          });
-
-          for (const pos of positions) {
-            const isWinner = pos.outcome === parsed.outcome;
-            const message = isWinner
-              ? `Congratulations! You won on market "${title}".`
-              : `The market "${title}" has been resolved. You lost your stake.`;
-
-            await this.notificationService.createNotification(
-              pos.userId,
-              message,
-              isWinner ? 'profit_credited' : 'market_resolved',
-            );
           }
           break;
 
         case 'Impact:Distributed':
-          await manager.save(ImpactLedgerEntryEntity, {
-            marketId: parsed.marketId,
-            ngoId: parsed.ngoId,
-            amount: parseFloat(parsed.amount) / 10000000, // Stroops to USDC
-            date: new Date(),
-            source: 'fee_pool',
-            txHash: event.txHash,
-          });
-          // Assuming gateway has this method or similar
-          this.gateway.server.emit('impact_distributed', {
-            marketId: parsed.marketId,
-            ngoId: parsed.ngoId,
-            amount: parsed.amount,
-          });
+          {
+            const market = await manager.findOne(MarketEntity, {
+              where: { onChainId: parsed.marketId },
+            });
+
+            await manager.save(ImpactLedgerEntryEntity, {
+              marketId: market?.id,
+              ngoId: parsed.ngoId,
+              amount: parseFloat(parsed.amount) / 10000000, // Stroops to USDC
+              date: new Date(),
+              source: 'fee_pool',
+              txHash: event.txHash,
+            });
+
+            this.gateway.server.emit('impact_distributed', {
+              marketId: market?.id,
+              onChainMarketId: parsed.marketId,
+              ngoId: parsed.ngoId,
+              amount: parsed.amount,
+            });
+          }
           break;
       }
 

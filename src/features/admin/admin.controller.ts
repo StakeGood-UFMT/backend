@@ -1,6 +1,7 @@
 import {
   Controller,
   Post,
+  Get,
   Body,
   UseGuards,
   Param,
@@ -25,6 +26,23 @@ export class AdminController {
     return this.adminService.createMarket(dto, req.user);
   }
 
+  @Post(':id/status')
+  async setMarketStatus(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body('status') status: 'draft' | 'active',
+    @Request() req: any,
+  ) {
+    return this.adminService.setMarketStatus(id, status, req.user);
+  }
+
+  @Get(':id/onchain')
+  async getOnChainMarket(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Request() req: any,
+  ) {
+    return this.adminService.getOnChainMarketForAdmin(id, req.user);
+  }
+
   @Post(':id/resolve')
   async resolveMarket(
     @Param('id', ParseUUIDPipe) id: string,
@@ -45,8 +63,9 @@ export class AdminController {
   @Post(':id/distribute-impact')
   async distributeImpact(
     @Param('id', ParseUUIDPipe) id: string,
+    @Body('winner_ngo_id') winnerNgoId: number,
     @Request() req: any,
   ) {
-    return this.adminService.distributeImpact(id, req.user);
+    return this.adminService.distributeImpact(id, winnerNgoId, req.user);
   }
 }

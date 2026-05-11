@@ -136,6 +136,121 @@ export class AdminService {
     return { xdr: assembled.toXDR(), txHash: assembled.hash().toString('hex') };
   }
 
+  private extractContractErrorCode(message: unknown): number | null {
+    const text = typeof message === 'string' ? message : '';
+    const m = text.match(/Error\(Contract,\s*#(\d+)\)/);
+    if (!m) return null;
+    const n = Number(m[1]);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  private marketOutcomeFromWinningOutcome(winningOutcome: unknown): 'YES' | 'NO' | null {
+    const n =
+      typeof winningOutcome === 'number'
+        ? winningOutcome
+        : typeof winningOutcome === 'bigint'
+          ? Number(winningOutcome)
+          : null;
+    if (n === 1) return 'YES';
+    if (n === 2) return 'NO';
+    return null;
+  }
+
+  private decodeContractDataValueFromLedgerEntryXdr(xdrB64: string): StellarSdk.xdr.ScVal | null {
+    try {
+      const data = StellarSdk.xdr.LedgerEntryData.fromXDR(xdrB64, 'base64');
+      if (data.switch() !== StellarSdk.xdr.LedgerEntryType.contractData()) return null;
+      return data.contractData().val();
+    } catch {}
+
+    try {
+      const entry = StellarSdk.xdr.LedgerEntry.fromXDR(xdrB64, 'base64');
+      const data = entry.data();
+      if (data.switch() !== StellarSdk.xdr.LedgerEntryType.contractData()) return null;
+      return data.contractData().val();
+    } catch {}
+
+    return null;
+  }
+
+  private async getOnChainMarket(contractId: string, marketId: bigint): Promise<any | null> {
+    const rpc = this.getRpcServer();
+    const contractScAddress = StellarSdk.Address.fromString(contractId).toScAddress();
+
+    const storageKey = StellarSdk.xdr.ScVal.scvVec([
+      StellarSdk.nativeToScVal('MarketId', { type: 'symbol' }),
+      StellarSdk.nativeToScVal(marketId, { type: 'u64' }),
+    ]);
+
+    const ledgerKey = StellarSdk.xdr.LedgerKey.contractData(
+      new StellarSdk.xdr.LedgerKeyContractData({
+        contract: contractScAddress,
+        key: storageKey,
+        durability: StellarSdk.xdr.ContractDataDurability.persistent(),
+      }),
+    );
+
+    const resp = await rpc.getLedgerEntries(ledgerKey);
+    const entryAny = ((resp as any)?.entries ?? [])[0] as any;
+    const xdrB64: string | undefined = entryAny?.xdr ?? entryAny?.data?.xdr;
+    if (!xdrB64) return null;
+
+    const val = this.decodeContractDataValueFromLedgerEntryXdr(xdrB64);
+    if (!val) return null;
+
+    const native = StellarSdk.scValToNative(val);
+    if (native instanceof Map) {
+      return Object.fromEntries(Array.from(native.entries()).map(([k, v]) => [String(k), v]));
+    }
+    return native;
+  }
+
+  async setMarketStatus(id: string, status: 'draft' | 'active', admin: AdminContext) {
+    const market = await this.marketRepo.findOne({ where: { id } });
+    if (!market) throw new NotFoundException('Market not found');
+    if (market.status === 'resolved') {
+      throw new BadRequestException('Resolved markets cannot be modified');
+    }
+
+    const now = new Date();
+    if (status === 'draft' && market.lockAt instanceof Date && now >= market.lockAt) {
+      throw new BadRequestException('Cannot deactivate a market after lock time');
+    }
+
+    await this.marketRepo.update({ id }, { status });
+
+    await this.auditRepo.save({
+      adminId: admin.userId,
+      action: 'SET_MARKET_STATUS',
+      targetType: 'MARKET',
+      targetId: id,
+      payload: { status },
+    });
+
+    return { ok: true, id, status };
+  }
+
+  async getOnChainMarketForAdmin(id: string, _admin: AdminContext) {
+    const market = await this.marketRepo.findOne({ where: { id } });
+    if (!market) throw new NotFoundException('Market not found');
+    if (!market.onChainId) throw new BadRequestException('Market is missing onChainId');
+
+    const contractId =
+      market.contractAddress ||
+      this.config.get<string>(
+        'STELLAR_CONTRACT_ID',
+        'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4',
+      );
+
+    const onChain = await this.getOnChainMarket(contractId, BigInt(market.onChainId));
+    return {
+      market_id: id,
+      on_chain_id: market.onChainId,
+      contract_id: contractId,
+      market: onChain,
+    };
+  }
+
   async buildCreateMarketXdr(params: {
     adminWallet: string;
     marketId: bigint;
@@ -235,6 +350,9 @@ export class AdminService {
     if (new Date() < market.lockAt) {
       throw new BadRequestException('Market is not locked yet');
     }
+    if (!market.onChainId) {
+      throw new BadRequestException('Market is missing onChainId');
+    }
 
     const contractId =
       market.contractAddress ||
@@ -242,7 +360,7 @@ export class AdminService {
         'STELLAR_CONTRACT_ID',
         'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4',
       );
-    const marketIdU64 = BigInt(market.onChainId || 0);
+    const marketIdU64 = BigInt(market.onChainId);
     const outcomeU32 = outcome === 'YES' ? 1 : 2;
     const oracleAddr = StellarSdk.Address.fromString(admin.wallet);
 
@@ -262,7 +380,52 @@ export class AdminService {
       auth: [],
     });
 
-    const built = await this.buildSimulatedXdr(admin.wallet, op);
+    let built: { xdr: string; txHash: string };
+    try {
+      built = await this.buildSimulatedXdr(admin.wallet, op);
+    } catch (e: any) {
+      const code = this.extractContractErrorCode(e?.message ?? e);
+      if (code === 6) {
+        try {
+          const onChain = await this.getOnChainMarket(contractId, marketIdU64);
+          const statusRaw = onChain?.status;
+          const status =
+            typeof statusRaw === 'number'
+              ? statusRaw
+              : typeof statusRaw === 'bigint'
+                ? Number(statusRaw)
+                : null;
+
+          const winningOutcome = onChain?.winning_outcome ?? onChain?.winningOutcome;
+          const resolvedOutcome = this.marketOutcomeFromWinningOutcome(winningOutcome);
+
+          if (status === 3 && resolvedOutcome) {
+            await this.marketRepo.update(
+              { id },
+              { status: 'resolved', outcome: resolvedOutcome as any },
+            );
+            throw new BadRequestException(
+              `Esse market já está resolvido on-chain (${resolvedOutcome}). Status local atualizado.`,
+            );
+          }
+
+          if (status === 2) {
+            throw new BadRequestException(
+              'Esse market está cancelado on-chain. Não é possível resolver novamente.',
+            );
+          }
+
+          if (status === 1) {
+            throw new BadRequestException(
+              'Esse market está LOCKED on-chain e o contrato atual está recusando a resolução (MarketClosed). Precisa ajustar o smart contract para aceitar LOCKED na função resolve_market.',
+            );
+          }
+        } catch (inner: any) {
+          if (inner instanceof BadRequestException) throw inner;
+        }
+      }
+      throw e;
+    }
     const xdr = built.xdr;
 
     await this.dataSource.transaction(async (manager) => {
@@ -288,6 +451,7 @@ export class AdminService {
   async cancelMarket(id: string, admin: AdminContext) {
     const market = await this.marketRepo.findOne({ where: { id } });
     if (!market) throw new NotFoundException('Market not found');
+    if (!market.onChainId) throw new BadRequestException('Market is missing onChainId');
 
     const contractId =
       market.contractAddress ||
@@ -295,7 +459,7 @@ export class AdminService {
         'STELLAR_CONTRACT_ID',
         'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4',
       );
-    const marketIdU64 = BigInt(market.onChainId || 0);
+    const marketIdU64 = BigInt(market.onChainId);
 
     const op = StellarSdk.Operation.invokeHostFunction({
       func: StellarSdk.xdr.HostFunction.hostFunctionTypeInvokeContract(
@@ -309,7 +473,8 @@ export class AdminService {
       auth: [],
     });
 
-    const xdr = this.buildXdr(admin.wallet, op);
+    const built = await this.buildSimulatedXdr(admin.wallet, op);
+    const xdr = built.xdr;
 
     await this.dataSource.transaction(async (manager) => {
       await manager.save(TxIntentEntity, {
@@ -327,12 +492,16 @@ export class AdminService {
       });
     });
 
-    return { xdr, action: 'CANCEL_MARKET' };
+    return { xdr, txHash: built.txHash, action: 'CANCEL_MARKET' };
   }
 
-  async distributeImpact(id: string, admin: AdminContext) {
+  async distributeImpact(id: string, winnerNgoId: number, admin: AdminContext) {
     const market = await this.marketRepo.findOne({ where: { id } });
     if (!market) throw new NotFoundException('Market not found');
+    if (!market.onChainId) throw new BadRequestException('Market is missing onChainId');
+    if (!Number.isInteger(winnerNgoId) || winnerNgoId <= 0) {
+      throw new BadRequestException('winner_ngo_id must be a positive integer');
+    }
 
     const contractId =
       market.contractAddress ||
@@ -340,7 +509,8 @@ export class AdminService {
         'STELLAR_CONTRACT_ID',
         'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4',
       );
-    const marketIdU64 = BigInt(market.onChainId || 0);
+    const marketIdU64 = BigInt(market.onChainId);
+    const adminAddr = StellarSdk.Address.fromString(admin.wallet);
 
     const op = StellarSdk.Operation.invokeHostFunction({
       func: StellarSdk.xdr.HostFunction.hostFunctionTypeInvokeContract(
@@ -348,13 +518,18 @@ export class AdminService {
           contractAddress:
             StellarSdk.Address.fromString(contractId).toScAddress(),
           functionName: 'distribute_impact_funds',
-          args: [StellarSdk.nativeToScVal(marketIdU64, { type: 'u64' })],
+          args: [
+            StellarSdk.nativeToScVal(adminAddr),
+            StellarSdk.nativeToScVal(marketIdU64, { type: 'u64' }),
+            StellarSdk.nativeToScVal(winnerNgoId, { type: 'u32' }),
+          ],
         }),
       ),
       auth: [],
     });
 
-    const xdr = this.buildXdr(admin.wallet, op);
+    const built = await this.buildSimulatedXdr(admin.wallet, op);
+    const xdr = built.xdr;
 
     await this.dataSource.transaction(async (manager) => {
       await manager.save(TxIntentEntity, {
@@ -375,7 +550,7 @@ export class AdminService {
       // Actual ledger update usually happens after SC event confirmation
     });
 
-    return { xdr, action: 'DISTRIBUTE_IMPACT' };
+    return { xdr, txHash: built.txHash, action: 'DISTRIBUTE_IMPACT' };
   }
 
   private buildXdr(wallet: string, op: any): string {
