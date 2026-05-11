@@ -566,7 +566,23 @@ export class MarketsService {
       trading_volume: number | null;
     }> = [];
 
-    if (!snapshots.length) {
+    let useSnapshots = snapshots.length > 0;
+    if (useSnapshots) {
+      const last = snapshots[snapshots.length - 1];
+      const snapYes = Number(last?.yesPool ?? 0);
+      const snapNo = Number(last?.noPool ?? 0);
+      const snapTotal = snapYes + snapNo;
+
+      const computed = await this.computePoolsFromPositions(marketId);
+      const computedTotal = Number(computed.totalLiquidity ?? 0);
+
+      if (computedTotal > 0) {
+        if (snapTotal <= 0) useSnapshots = false;
+        else if (Math.abs(computedTotal - snapTotal) > 1e-8) useSnapshots = false;
+      }
+    }
+
+    if (!useSnapshots) {
       const positions = await this.userPositionRepo.find({
         where: { marketId },
         order: { createdAt: 'ASC' },
@@ -605,8 +621,14 @@ export class MarketsService {
       }));
     }
 
+    const maxPointTs = points.reduce((acc, p) => {
+      const t = p.timestamp?.getTime?.();
+      return typeof t === 'number' && Number.isFinite(t) ? Math.max(acc, t) : acc;
+    }, 0);
+    const anchorNow = maxPointTs > 0 ? Math.max(now, maxPointTs) : now;
+
     if (normalizedRange === '1H') {
-      const series = this.resampleMarketHistory(points, now, msMinute, 60);
+      const series = this.resampleMarketHistory(points, anchorNow, msMinute, 60);
       return {
         market_id: marketId,
         title: market.title,
@@ -616,7 +638,7 @@ export class MarketsService {
     }
 
     if (normalizedRange === '1D') {
-      const series = this.resampleMarketHistory(points, now, msHour, 24);
+      const series = this.resampleMarketHistory(points, anchorNow, msHour, 24);
       return {
         market_id: marketId,
         title: market.title,
@@ -626,7 +648,7 @@ export class MarketsService {
     }
 
     if (normalizedRange === '1W') {
-      const series = this.resampleMarketHistory(points, now, msDay, 7);
+      const series = this.resampleMarketHistory(points, anchorNow, msDay, 7);
       return {
         market_id: marketId,
         title: market.title,
