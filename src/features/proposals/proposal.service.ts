@@ -106,6 +106,7 @@ export class ProposalService {
       feeNgoBps,
       feePlatformBps,
       feeGamificationBps,
+      ngoCandidateIds: proposal.ngoCandidateIds ?? [],
     });
   }
 
@@ -155,6 +156,7 @@ export class ProposalService {
         feeNgo: 0.02,
         feePlatform: 0.01,
         feeGamification: 0.005,
+        ngoCandidateIds: proposal.ngoCandidateIds ?? [],
       });
 
       const savedMarket = await this.marketRepo.save(market);

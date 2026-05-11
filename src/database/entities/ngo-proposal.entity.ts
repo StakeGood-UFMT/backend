@@ -10,19 +10,19 @@ import {
 } from 'typeorm';
 import { UserEntity } from './user.entity';
 
-export enum ProposalStatus {
+export enum NgoProposalStatus {
   PENDING = 'PENDING',
   APPROVED = 'APPROVED',
   REJECTED = 'REJECTED',
 }
 
-@Entity('proposals')
-export class ProposalEntity {
+@Entity('ngo_proposals')
+export class NgoProposalEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ length: 500 })
-  title: string;
+  @Column({ length: 255 })
+  name: string;
 
   @Column({ type: 'text', nullable: true })
   description?: string;
@@ -31,30 +31,22 @@ export class ProposalEntity {
   @Column({ length: 50, nullable: true })
   category?: string;
 
-  @Column({ name: 'image_url', type: 'text', nullable: true })
-  imageUrl?: string;
+  @Index()
+  @Column({ name: 'wallet_address', length: 56 })
+  walletAddress: string;
 
-  @Column({ name: 'oracle_url', type: 'text', nullable: true })
-  oracleUrl?: string;
+  @Column({ name: 'website', length: 500, nullable: true })
+  website?: string;
 
-  @Column({ name: 'resolution_rule', type: 'text', nullable: true })
-  resolutionRule?: string;
-
-  @Column({ name: 'resolution_source', type: 'text', nullable: true })
-  resolutionSource?: string;
+  @Column({ type: 'jsonb', default: {} })
+  links: Record<string, any>;
 
   @Column({
     type: 'enum',
-    enum: ProposalStatus,
-    default: ProposalStatus.PENDING,
+    enum: NgoProposalStatus,
+    default: NgoProposalStatus.PENDING,
   })
-  status: ProposalStatus;
-
-  @Column({ name: 'lock_at', type: 'timestamp' })
-  lockAt: Date;
-
-  @Column({ name: 'resolve_at', type: 'timestamp' })
-  resolveAt: Date;
+  status: NgoProposalStatus;
 
   @Column({ name: 'user_id' })
   userId: string;
@@ -72,14 +64,12 @@ export class ProposalEntity {
   @Column({ name: 'rejection_reason', type: 'text', nullable: true })
   rejectionReason?: string;
 
-  @Column({ name: 'reserved_on_chain_id', type: 'bigint', nullable: true })
-  reservedOnChainId?: string;
+  @Index()
+  @Column({ name: 'reserved_on_chain_id', type: 'integer', nullable: true })
+  reservedOnChainId?: number;
 
-  @Column({ name: 'market_id', nullable: true })
-  marketId?: string;
-
-  @Column({ name: 'ngo_candidate_ids', type: 'jsonb', default: [] })
-  ngoCandidateIds: number[];
+  @Column({ name: 'ngo_id', nullable: true })
+  ngoId?: string;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

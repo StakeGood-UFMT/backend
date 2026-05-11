@@ -12,6 +12,10 @@ export class NgoEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
+  @Index({ unique: true })
+  @Column({ name: 'on_chain_id', type: 'integer', nullable: true })
+  onChainId?: number;
+
   @Column({ unique: true, length: 255 })
   name: string;
 

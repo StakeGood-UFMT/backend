@@ -35,13 +35,14 @@ export interface HorizonEvent {
 
 interface ParsedNgoRegistered {
   kind: 'NGO:Registered';
+  ngoId: string;
   walletAddress: string;
-  name: string;
+  name?: string;
 }
 
 interface ParsedNgoDeactivated {
   kind: 'NGO:Deactivated';
-  walletAddress: string;
+  ngoId: string;
 }
 
 interface ParsedMarketCreated {
@@ -253,6 +254,47 @@ export class StellarWorkerService implements OnModuleInit, OnModuleDestroy {
       return null;
     }
 
+    if (namespace === 'NGO' && action === 'Registered') {
+      const tuple = asTuple(body);
+      const ngoId =
+        toBigintLikeString(tuple?.[0]) ??
+        toBigintLikeString(body?.ngo_id) ??
+        toBigintLikeString(body?.ngoId) ??
+        null;
+
+      const walletValue = tuple?.[1] ?? body?.wallet_address ?? body?.walletAddress ?? body?.wallet;
+      const walletAddress =
+        typeof walletValue === 'string'
+          ? walletValue.trim()
+          : walletValue !== undefined && walletValue !== null
+            ? String(walletValue)
+            : '';
+      if (!walletAddress) return null;
+
+      const nameRaw = body?.name ?? body?.ngo_name ?? body?.ngoName ?? null;
+      const name = typeof nameRaw === 'string' && nameRaw.trim() ? nameRaw.trim() : undefined;
+
+      return {
+        kind: 'NGO:Registered',
+        ngoId: ngoId ?? '0',
+        walletAddress,
+        name,
+      };
+    }
+
+    if (namespace === 'NGO' && action === 'Deactivated') {
+      const tuple = asTuple(body);
+      const ngoId =
+        toBigintLikeString(tuple?.[0]) ??
+        toBigintLikeString(body?.ngo_id) ??
+        toBigintLikeString(body?.ngoId) ??
+        toBigintLikeString(body) ??
+        null;
+      if (!ngoId) return null;
+
+      return { kind: 'NGO:Deactivated', ngoId };
+    }
+
     if (namespace === 'Market' && action === 'Resolved') {
       const tuple = asTuple(body);
       const marketId =
@@ -273,6 +315,42 @@ export class StellarWorkerService implements OnModuleInit, OnModuleDestroy {
         kind: 'Market:Resolved',
         marketId,
         outcome: outcomeRaw === 1 ? 'YES' : 'NO',
+      };
+    }
+
+    if (namespace === 'Market' && action === 'Created') {
+      const tuple = asTuple(body);
+      const marketId =
+        toBigintLikeString(tuple?.[0]) ??
+        toBigintLikeString(body?.market_id) ??
+        toBigintLikeString(body?.marketId) ??
+        toBigintLikeString(body?.id) ??
+        '0';
+
+      const title =
+        (typeof body?.title === 'string' && body.title.trim()
+          ? body.title.trim()
+          : undefined) ?? `Market ${marketId}`;
+
+      const lockAtRaw = body?.lock_at ?? body?.lockAt ?? null;
+      const resolveAtRaw = body?.resolve_at ?? body?.resolveAt ?? null;
+      const lockAt = lockAtRaw ? new Date(String(lockAtRaw)) : new Date(0);
+      const resolveAt = resolveAtRaw ? new Date(String(resolveAtRaw)) : new Date(0);
+
+      const createdBy =
+        (typeof body?.created_by === 'string' && body.created_by.trim()
+          ? body.created_by.trim()
+          : typeof body?.createdBy === 'string' && body.createdBy.trim()
+            ? body.createdBy.trim()
+            : '') || '';
+
+      return {
+        kind: 'Market:Created',
+        marketId,
+        title,
+        lockAt,
+        resolveAt,
+        createdBy,
       };
     }
 
@@ -306,7 +384,7 @@ export class StellarWorkerService implements OnModuleInit, OnModuleDestroy {
       };
     }
 
-    if (namespace === 'NGO' || namespace === 'Market') {
+    if (namespace === 'Market') {
       return null;
     }
 
@@ -320,26 +398,53 @@ export class StellarWorkerService implements OnModuleInit, OnModuleDestroy {
     await this.dataSource.transaction(async (manager) => {
       switch (parsed.kind) {
         case 'NGO:Registered':
-          await manager.upsert(
-            NgoEntity,
-            {
-              walletAddress: parsed.walletAddress,
-              name: parsed.name,
-              slug: parsed.walletAddress,
-              verified: false,
-              social: {},
-              impactMetrics: {},
-            },
-            ['walletAddress'],
-          );
+          {
+            const onChainId = Number(parsed.ngoId);
+            const onChainIdSafe = Number.isFinite(onChainId) ? onChainId : undefined;
+
+            const existing = await manager.findOne(NgoEntity, {
+              where: [
+                ...(onChainIdSafe !== undefined ? [{ onChainId: onChainIdSafe }] : []),
+                { walletAddress: parsed.walletAddress },
+              ],
+            });
+
+            if (existing) {
+              existing.walletAddress = parsed.walletAddress;
+              if (onChainIdSafe !== undefined) existing.onChainId = onChainIdSafe;
+              if (parsed.name) existing.name = parsed.name;
+              if (!existing.slug) existing.slug = parsed.walletAddress;
+              if (!existing.social) existing.social = {};
+              if (!existing.impactMetrics) existing.impactMetrics = {};
+              await manager.save(NgoEntity, existing);
+            } else {
+              await manager.save(
+                NgoEntity,
+                manager.create(NgoEntity, {
+                  onChainId: onChainIdSafe,
+                  walletAddress: parsed.walletAddress,
+                  name: parsed.name ?? `NGO ${parsed.ngoId}`,
+                  slug: parsed.walletAddress,
+                  verified: false,
+                  social: {},
+                  impactMetrics: {},
+                }),
+              );
+            }
+          }
           break;
 
         case 'NGO:Deactivated':
-          await manager.update(
-            NgoEntity,
-            { walletAddress: parsed.walletAddress },
-            { verified: false },
-          );
+          {
+            const onChainId = Number(parsed.ngoId);
+            if (Number.isFinite(onChainId)) {
+              await manager.update(
+                NgoEntity,
+                { onChainId },
+                { verified: false },
+              );
+            }
+          }
           break;
 
         case 'Market:Created':
@@ -468,9 +573,14 @@ export class StellarWorkerService implements OnModuleInit, OnModuleDestroy {
               where: { onChainId: parsed.marketId },
             });
 
+            const onChainNgoId = Number(parsed.ngoId);
+            const ngo = Number.isFinite(onChainNgoId)
+              ? await manager.findOne(NgoEntity, { where: { onChainId: onChainNgoId } })
+              : null;
+
             await manager.save(ImpactLedgerEntryEntity, {
               marketId: market?.id,
-              ngoId: parsed.ngoId,
+              ngoId: ngo?.id ?? parsed.ngoId,
               amount: parseFloat(parsed.amount) / 10000000, // Stroops to USDC
               date: new Date(),
               source: 'fee_pool',
@@ -480,7 +590,8 @@ export class StellarWorkerService implements OnModuleInit, OnModuleDestroy {
             this.gateway.server.emit('impact_distributed', {
               marketId: market?.id,
               onChainMarketId: parsed.marketId,
-              ngoId: parsed.ngoId,
+              ngoId: ngo?.id ?? parsed.ngoId,
+              onChainNgoId: parsed.ngoId,
               amount: parsed.amount,
             });
           }

@@ -7,6 +7,7 @@ import { MarketEntity } from '../../database/entities/market.entity';
 import { MarketSnapshotEntity } from '../../database/entities/market-snapshot.entity';
 import { UserPositionEntity } from '../../database/entities/user-position.entity';
 import { UserEntity } from '../../database/entities/user.entity';
+import { NgoEntity } from '../../database/entities/ngo.entity';
 import {
   ListMarketsQueryDto,
   MarketSortOption,
@@ -23,6 +24,8 @@ export class MarketsService {
     private readonly userPositionRepo: Repository<UserPositionEntity>,
     @InjectRepository(UserEntity)
     private readonly userRepo: Repository<UserEntity>,
+    @InjectRepository(NgoEntity)
+    private readonly ngoRepo: Repository<NgoEntity>,
     private readonly config: ConfigService,
   ) {}
 
@@ -469,6 +472,20 @@ export class MarketsService {
     const market = await this.marketRepo.findOne({ where: { id } });
     if (!market) throw new NotFoundException('Market not found');
 
+    const ngoCandidateIds = Array.isArray(market.ngoCandidateIds)
+      ? market.ngoCandidateIds
+          .map((n: any) => Number(n))
+          .filter((n: any) => Number.isInteger(n) && n > 0)
+      : [];
+    const ngoCandidates = ngoCandidateIds.length
+      ? await this.ngoRepo.find({ where: { onChainId: In(ngoCandidateIds) } })
+      : [];
+    const ngoByOnChainId = new Map<number, NgoEntity>(
+      ngoCandidates
+        .filter((n) => typeof n.onChainId === 'number')
+        .map((n) => [n.onChainId as number, n]),
+    );
+
     const snap = await this.snapshotRepo
       .createQueryBuilder('s')
       .where('s.market_id = :id', { id })
@@ -522,6 +539,17 @@ export class MarketsService {
       updated_at: market.updatedAt,
       resolution_rule: market.resolutionRule,
       resolution_source: market.resolutionSource,
+      ngo_candidate_ids: ngoCandidateIds,
+      ngo_candidates: ngoCandidateIds.map((id) => {
+        const ngo = ngoByOnChainId.get(id);
+        const social = ngo?.social ?? {};
+        return {
+          on_chain_id: id,
+          id: ngo?.id ?? null,
+          name: ngo?.name ?? `NGO ${id}`,
+          logo_url: social.logo_url ?? social.logoUrl ?? '',
+        };
+      }),
     };
   }
 

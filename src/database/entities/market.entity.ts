@@ -101,6 +101,9 @@ export class MarketEntity {
   @Column({ name: 'created_by', nullable: true })
   createdBy?: string;
 
+  @Column({ name: 'ngo_candidate_ids', type: 'jsonb', default: [] })
+  ngoCandidateIds: number[];
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

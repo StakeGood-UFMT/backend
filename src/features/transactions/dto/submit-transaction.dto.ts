@@ -1,4 +1,4 @@
-import { IsIn, IsOptional, IsString } from 'class-validator';
+import { IsIn, IsOptional, IsString, IsInt, Min } from 'class-validator';
 
 export class SubmitTransactionDto {
   @IsString()
@@ -19,4 +19,9 @@ export class SubmitTransactionDto {
   @IsOptional()
   @IsString()
   amount?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  ngo_id?: number;
 }

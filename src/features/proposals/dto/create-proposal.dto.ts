@@ -4,6 +4,12 @@ import {
   IsDateString,
   IsUrl,
   MaxLength,
+  IsArray,
+  ArrayMinSize,
+  ArrayMaxSize,
+  ArrayUnique,
+  IsInt,
+  Min,
 } from 'class-validator';
 
 export class CreateProposalDto {
@@ -40,4 +46,12 @@ export class CreateProposalDto {
   @IsString()
   @IsOptional()
   resolutionSource?: string;
+
+  @IsArray()
+  @ArrayMinSize(3)
+  @ArrayMaxSize(3)
+  @ArrayUnique()
+  @IsInt({ each: true })
+  @Min(1, { each: true })
+  ngoCandidateIds: number[];
 }

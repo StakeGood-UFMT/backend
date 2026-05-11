@@ -63,9 +63,8 @@ export class AdminController {
   @Post(':id/distribute-impact')
   async distributeImpact(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body('winner_ngo_id') winnerNgoId: number,
     @Request() req: any,
   ) {
-    return this.adminService.distributeImpact(id, winnerNgoId, req.user);
+    return this.adminService.distributeImpact(id, req.user);
   }
 }

@@ -17,6 +17,7 @@ import { KeeperModule } from './features/keeper/keeper.module';
 import { NotificationsModule } from './features/notifications/notifications.module';
 import { BullModule } from '@nestjs/bullmq';
 import { ProposalModule } from './features/proposals/proposals.module';
+import { NgoProposalsModule } from './features/ngo-proposals/ngo-proposals.module';
 import { SettingsModule } from './features/settings/settings.module';
 import { LeaderboardModule } from './features/leaderboard/leaderboard.module';
 import { LegalModule } from './features/legal/legal.module';
@@ -123,6 +124,7 @@ import { LegalModule } from './features/legal/legal.module';
     KeeperModule,
     NotificationsModule,
     ProposalModule,
+    NgoProposalsModule,
     SettingsModule,
     LeaderboardModule,
     LegalModule,

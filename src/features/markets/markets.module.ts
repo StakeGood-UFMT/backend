@@ -6,6 +6,7 @@ import { MarketEntity } from '../../database/entities/market.entity';
 import { MarketSnapshotEntity } from '../../database/entities/market-snapshot.entity';
 import { UserPositionEntity } from '../../database/entities/user-position.entity';
 import { UserEntity } from '../../database/entities/user.entity';
+import { NgoEntity } from '../../database/entities/ngo.entity';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { UserEntity } from '../../database/entities/user.entity';
       MarketSnapshotEntity,
       UserPositionEntity,
       UserEntity,
+      NgoEntity,
     ]),
   ],
   controllers: [MarketsController],

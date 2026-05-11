@@ -57,6 +57,9 @@ export class UserPositionEntity {
   })
   payoutAmount?: number;
 
+  @Column({ name: 'ngo_on_chain_id', type: 'integer', nullable: true })
+  ngoOnChainId?: number;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
