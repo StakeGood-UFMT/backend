@@ -776,4 +776,41 @@ export class MarketsService {
 
     return out;
   }
+
+  async getVotingStats(marketId: string) {
+    const market = await this.marketRepo.findOne({ where: { id: marketId } });
+    if (!market) throw new NotFoundException('Market not found');
+
+    const ngoCandidateIds = Array.isArray(market.ngoCandidateIds)
+      ? market.ngoCandidateIds.map((n) => Number(n))
+      : [];
+
+    const stats = await this.userPositionRepo
+      .createQueryBuilder('p')
+      .select('p.ngo_on_chain_id', 'ngoOnChainId')
+      .addSelect('COUNT(p.id)', 'count')
+      .addSelect('SUM(p.amount_staked)', 'totalAmount')
+      .where('p.market_id = :marketId', { marketId })
+      .andWhere("p.status IN ('confirmed', 'resolved', 'claimed')")
+      .groupBy('p.ngo_on_chain_id')
+      .getRawMany();
+
+    const ngos = ngoCandidateIds.length
+      ? await this.ngoRepo.find({ where: { onChainId: In(ngoCandidateIds) } })
+      : [];
+
+    const ngoByOnChainId = new Map(ngos.map((n) => [n.onChainId, n]));
+
+    return ngoCandidateIds.map((id) => {
+      const stat = stats.find((s) => Number(s.ngoOnChainId) === id);
+      const ngo = ngoByOnChainId.get(id);
+      return {
+        on_chain_id: id,
+        name: ngo?.name || `NGO ${id}`,
+        logo_url: ngo?.social?.logo_url || ngo?.social?.logoUrl || '',
+        votes_count: Number(stat?.count || 0),
+        total_amount: Number(stat?.totalAmount || 0),
+      };
+    });
+  }
 }
