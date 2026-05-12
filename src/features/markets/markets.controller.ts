@@ -52,4 +52,9 @@ export class MarketsController {
   getResults(@Param('id') id: string) {
     return this.marketsService.getResults(id);
   }
+
+  @Get(':id/voting')
+  getVotingStats(@Param('id') id: string) {
+    return this.marketsService.getVotingStats(id);
+  }
 }
