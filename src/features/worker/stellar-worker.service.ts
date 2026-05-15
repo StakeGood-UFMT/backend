@@ -67,12 +67,20 @@ interface ParsedImpactDistributed {
   amount: string;
 }
 
+interface ParsedRewardClaimed {
+  kind: 'Reward:Claimed';
+  marketId: string;
+  userWallet: string;
+  amount: string;
+}
+
 type ParsedEvent =
   | ParsedNgoRegistered
   | ParsedNgoDeactivated
   | ParsedMarketCreated
   | ParsedMarketResolved
-  | ParsedImpactDistributed;
+  | ParsedImpactDistributed
+  | ParsedRewardClaimed;
 
 @Injectable()
 export class StellarWorkerService implements OnModuleInit, OnModuleDestroy {
@@ -353,7 +361,6 @@ export class StellarWorkerService implements OnModuleInit, OnModuleDestroy {
         createdBy,
       };
     }
-
     if (namespace === 'Impact' && action === 'Distributed') {
       const tuple = asTuple(body);
       const marketId =
@@ -380,6 +387,35 @@ export class StellarWorkerService implements OnModuleInit, OnModuleDestroy {
         kind: 'Impact:Distributed',
         marketId,
         ngoId,
+        amount,
+      };
+    }
+
+    if (namespace === 'Reward' && action === 'Claimed') {
+      const tuple = asTuple(body);
+      const marketId =
+        toBigintLikeString(tuple?.[0]) ??
+        toBigintLikeString(body?.market_id) ??
+        toBigintLikeString(body?.marketId) ??
+        null;
+      if (!marketId) return null;
+
+      const userWallet =
+        String(tuple?.[1] ?? '') ||
+        String(body?.user ?? '') ||
+        String(body?.user_wallet ?? '') ||
+        '';
+      if (!userWallet) return null;
+
+      const amount =
+        toBigintLikeString(tuple?.[2]) ??
+        toBigintLikeString(body?.amount) ??
+        '0';
+
+      return {
+        kind: 'Reward:Claimed',
+        marketId,
+        userWallet,
         amount,
       };
     }
@@ -445,29 +481,46 @@ export class StellarWorkerService implements OnModuleInit, OnModuleDestroy {
           break;
 
         case 'Market:Created':
-          await manager.upsert(
-            MarketEntity,
-            {
-              title: parsed.title,
-              onChainId: parsed.marketId,
-              status: 'active', // Set to active when created on-chain
-              lockAt: parsed.lockAt,
-              resolveAt: parsed.resolveAt,
-              createdBy: parsed.createdBy,
-            },
-            ['id'],
-          );
+          {
+            const existingMarket = await manager.findOne(MarketEntity, {
+              where: { onChainId: parsed.marketId },
+            });
 
-          // Notify creator
-          const creator = await manager.findOne(UserEntity, {
-            where: { primaryWallet: parsed.createdBy },
-          });
-          if (creator) {
-            await this.notificationService.createNotification(
-              creator.id,
-              `Your market "${parsed.title}" has been successfully created!`,
-              'market_created',
-            );
+            if (existingMarket) {
+              // If market already exists (created by proposal approval), just ensure it's marked as active
+              await manager.update(
+                MarketEntity,
+                { id: existingMarket.id },
+                { status: 'active' },
+              );
+              this.logger.log(`Market ${parsed.marketId} already exists, status updated to active.`);
+            } else {
+              // If it doesn't exist, it was likely created directly on-chain or via another admin tool
+              await manager.save(
+                MarketEntity,
+                manager.create(MarketEntity, {
+                  title: parsed.title,
+                  onChainId: parsed.marketId,
+                  status: 'active',
+                  lockAt: parsed.lockAt,
+                  resolveAt: parsed.resolveAt,
+                  createdBy: parsed.createdBy,
+                }),
+              );
+              this.logger.log(`New market ${parsed.marketId} ingested from chain: ${parsed.title}`);
+            }
+
+            // Notify creator if we can find them
+            const creator = await manager.findOne(UserEntity, {
+              where: { primaryWallet: parsed.createdBy },
+            });
+            if (creator) {
+              await this.notificationService.createNotification(
+                creator.id,
+                `Your market "${parsed.title || existingMarket?.title}" has been successfully created!`,
+                'market_created',
+              );
+            }
           }
           break;
 
@@ -591,6 +644,40 @@ export class StellarWorkerService implements OnModuleInit, OnModuleDestroy {
               onChainNgoId: parsed.ngoId,
               amount: parsed.amount,
             });
+          }
+          break;
+
+        case 'Reward:Claimed':
+          {
+            const market = await manager.findOne(MarketEntity, {
+              where: { onChainId: parsed.marketId },
+            });
+            if (!market) break;
+
+            const user = await manager.findOne(UserEntity, {
+              where: { primaryWallet: parsed.userWallet },
+            });
+            if (!user) break;
+
+            // Update the position to claimed
+            await manager.update(
+              UserPositionEntity,
+              {
+                userId: user.id,
+                marketId: market.id,
+                status: 'resolved',
+              },
+              {
+                status: 'claimed',
+                txHash: event.txHash,
+              },
+            );
+
+            await this.notificationService.createNotification(
+              user.id,
+              `You have successfully claimed your reward for market "${market.title}".`,
+              'payout_completed',
+            );
           }
           break;
       }

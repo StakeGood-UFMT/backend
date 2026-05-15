@@ -445,6 +445,10 @@ export class MarketsService {
 
     const items = markets.map((market) => {
       const snap = latestSnapshots.get(market.id);
+      const yesPool = Number(snap?.yesPool ?? 0);
+      const noPool = Number(snap?.noPool ?? 0);
+      const totalLiquidity = yesPool + noPool;
+
       return {
         id: market.id,
         title: market.title,
@@ -456,7 +460,10 @@ export class MarketsService {
         lock_at: market.lockAt,
         settle_at: market.resolveAt,
         outcome: market.outcome ?? null,
-        asset_code: market.assetCode ?? null,
+        asset_code: market.assetCode ?? 'XLM', // Default to XLM if null
+        total_liquidity: totalLiquidity,
+        yes_price: totalLiquidity > 0 ? yesPool / totalLiquidity : 0.5,
+        no_price: totalLiquidity > 0 ? noPool / totalLiquidity : 0.5,
         current_prices: snap ? this.formatPrices(snap) : null,
         created_at: market.createdAt,
       };
