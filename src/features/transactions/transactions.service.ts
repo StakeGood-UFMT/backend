@@ -15,6 +15,7 @@ import { MarketSnapshotEntity } from '../../database/entities/market-snapshot.en
 import { DepositEntity } from '../../database/entities/deposit.entity';
 import { UserPositionEntity } from '../../database/entities/user-position.entity';
 import { BuildPredictionDto } from './dto/build-prediction.dto';
+import { BuildClaimDto } from './dto/build-claim.dto';
 import { SubmitTransactionDto } from './dto/submit-transaction.dto';
 
 @Injectable()
@@ -256,6 +257,112 @@ export class TransactionsService {
         implied_probability: impliedProbability.toFixed(3),
         implied_odds: payoutMultiplier.toFixed(2),
         potential_win: `${potentialWin.toFixed(2)} XLM`,
+      },
+    };
+  }
+
+  async buildClaim(dto: BuildClaimDto, jwtUser: any) {
+    const user = await this.userRepo.findOne({ where: { id: jwtUser.userId } });
+    if (!user) throw new NotFoundException('User not found');
+
+    const position = await this.userPositionRepo.findOne({
+      where: { id: dto.claim_id, userId: user.id },
+    });
+
+    if (!position) throw new NotFoundException('Claimable position not found');
+    if (position.status === 'claimed') {
+      throw new BadRequestException('Reward already claimed');
+    }
+    if (position.status !== 'resolved') {
+      throw new BadRequestException('Position is not resolved yet');
+    }
+
+    const market = await this.marketRepo.findOne({
+      where: { id: position.marketId },
+    });
+    if (!market) throw new NotFoundException('Market not found');
+    if (!market.onChainId) {
+      throw new BadRequestException('Market is missing onChainId');
+    }
+
+    const contractId =
+      market.contractAddress ||
+      this.config.get<string>('STELLAR_CONTRACT_ID', '');
+    if (!contractId) {
+      throw new BadRequestException('STELLAR_CONTRACT_ID is not configured');
+    }
+
+    const marketIdU64 = BigInt(market.onChainId);
+
+    const op = StellarSdk.Operation.invokeHostFunction({
+      func: StellarSdk.xdr.HostFunction.hostFunctionTypeInvokeContract(
+        new StellarSdk.xdr.InvokeContractArgs({
+          contractAddress:
+            this.parseAddress(contractId, 'contract').toScAddress(),
+          functionName: 'claim_reward',
+          args: [
+            StellarSdk.nativeToScVal(
+              this.parseAddress(user.primaryWallet, 'user wallet'),
+            ),
+            StellarSdk.nativeToScVal(marketIdU64, { type: 'u64' }),
+          ],
+        }),
+      ),
+      auth: [],
+    });
+
+    const networkPassphrase = this.getNetworkPassphrase();
+
+    if (this.config.get<string>('NODE_ENV') === 'test') {
+      const tx = new StellarSdk.TransactionBuilder(
+        new StellarSdk.Account(user.primaryWallet, '0'),
+        { fee: '10000', networkPassphrase },
+      )
+        .addOperation(op)
+        .setTimeout(StellarSdk.TimeoutInfinite)
+        .build();
+
+      return {
+        xdr: tx.toXDR(),
+        txHash: tx.hash().toString('hex'),
+        summary: {
+          action: 'claim_reward',
+          market: { id: market.id, title: market.title },
+          amount: `${position.payoutAmount} XLM`,
+        },
+      };
+    }
+
+    const horizon = this.getHorizonServer();
+    const rpc = this.getRpcServer();
+
+    const account = await horizon.loadAccount(user.primaryWallet);
+    const tx = new StellarSdk.TransactionBuilder(account, {
+      fee: '10000',
+      networkPassphrase,
+    })
+      .addOperation(op)
+      .setTimeout(StellarSdk.TimeoutInfinite)
+      .build();
+
+    const sim = await rpc.simulateTransaction(tx);
+    if (StellarSdk.rpc.Api.isSimulationError(sim)) {
+      throw new BadRequestException(sim.error);
+    }
+    if (!StellarSdk.rpc.Api.isSimulationSuccess(sim)) {
+      throw new BadRequestException('Simulation failed');
+    }
+
+    const assembled = StellarSdk.rpc.assembleTransaction(tx, sim).build();
+    const xdr = assembled.toXDR();
+
+    return {
+      xdr,
+      txHash: assembled.hash().toString('hex'),
+      summary: {
+        action: 'claim_reward',
+        market: { id: market.id, title: market.title },
+        amount: `${position.payoutAmount} XLM`,
       },
     };
   }

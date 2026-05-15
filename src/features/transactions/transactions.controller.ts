@@ -2,6 +2,7 @@ import { Controller, Post, Body, UseGuards, Request, Get, Param } from '@nestjs/
 import { AuthGuard } from '@nestjs/passport';
 import { TransactionsService } from './transactions.service';
 import { BuildPredictionDto } from './dto/build-prediction.dto';
+import { BuildClaimDto } from './dto/build-claim.dto';
 import { SubmitTransactionDto } from './dto/submit-transaction.dto';
 import type { Request as ExpressRequest } from 'express';
 
@@ -16,6 +17,14 @@ export class TransactionsController {
     @Request() req: ExpressRequest & { user?: { [key: string]: any } },
   ) {
     return this.transactionsService.buildPrediction(dto, req.user);
+  }
+
+  @Post('build-claim')
+  buildClaim(
+    @Body() dto: BuildClaimDto,
+    @Request() req: ExpressRequest & { user?: { [key: string]: any } },
+  ) {
+    return this.transactionsService.buildClaim(dto, req.user);
   }
 
   @Post('submit')
