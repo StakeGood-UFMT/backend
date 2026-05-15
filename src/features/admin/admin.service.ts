@@ -516,6 +516,7 @@ export class AdminService {
         'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4',
       );
     const marketIdU64 = BigInt(market.onChainId);
+    const adminAddr = this.parseAddress(admin.wallet, 'admin wallet');
 
     const op = StellarSdk.Operation.invokeHostFunction({
       func: StellarSdk.xdr.HostFunction.hostFunctionTypeInvokeContract(
@@ -523,7 +524,10 @@ export class AdminService {
           contractAddress:
             this.parseAddress(contractId, 'contract').toScAddress(),
           functionName: 'cancel_market',
-          args: [StellarSdk.nativeToScVal(marketIdU64, { type: 'u64' })],
+          args: [
+            StellarSdk.nativeToScVal(adminAddr),
+            StellarSdk.nativeToScVal(marketIdU64, { type: 'u64' }),
+          ],
         }),
       ),
       auth: [],
