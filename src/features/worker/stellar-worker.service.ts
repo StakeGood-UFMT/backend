@@ -309,7 +309,10 @@ export class StellarWorkerService implements OnModuleInit, OnModuleDestroy {
         toBigintLikeString(tuple?.[0]) ??
         toBigintLikeString(body?.market_id) ??
         toBigintLikeString(body?.marketId) ??
+        toBigintLikeString(body?.id) ??
+        toBigintLikeString(body) ??
         null;
+
       if (!marketId) return null;
 
       const outcomeRaw =
@@ -317,13 +320,27 @@ export class StellarWorkerService implements OnModuleInit, OnModuleDestroy {
         toNumberLike(body?.winning_outcome) ??
         toNumberLike(body?.outcome) ??
         null;
-      if (!outcomeRaw) return null;
+      if (outcomeRaw === null) return null;
 
       return {
         kind: 'Market:Resolved',
         marketId,
         outcome: outcomeRaw === 1 ? 'YES' : 'NO',
       };
+    }
+
+    if (namespace === 'Market' && action === 'Locked') {
+      const marketId =
+        toBigintLikeString(asTuple(body)?.[0]) ?? toBigintLikeString(body) ?? null;
+      if (!marketId) return null;
+      return { kind: 'Market:Locked' as any, marketId };
+    }
+
+    if (namespace === 'Market' && action === 'Canceled') {
+      const marketId =
+        toBigintLikeString(asTuple(body)?.[0]) ?? toBigintLikeString(body) ?? null;
+      if (!marketId) return null;
+      return { kind: 'Market:Canceled' as any, marketId };
     }
 
     if (namespace === 'Market' && action === 'Created') {
@@ -333,7 +350,10 @@ export class StellarWorkerService implements OnModuleInit, OnModuleDestroy {
         toBigintLikeString(body?.market_id) ??
         toBigintLikeString(body?.marketId) ??
         toBigintLikeString(body?.id) ??
-        '0';
+        toBigintLikeString(body) ??
+        null;
+
+      if (!marketId) return null;
 
       const title =
         (typeof body?.title === 'string' && body.title.trim()
@@ -678,6 +698,21 @@ export class StellarWorkerService implements OnModuleInit, OnModuleDestroy {
               `You have successfully claimed your reward for market "${market.title}".`,
               'payout_completed',
             );
+          }
+          break;
+        case 'Market:Locked' as any:
+          {
+            const marketId = (parsed as any).marketId;
+            await manager.update(MarketEntity, { onChainId: marketId }, { status: 'locked' });
+            this.logger.log(`Market ${marketId} locked on-chain.`);
+          }
+          break;
+
+        case 'Market:Canceled' as any:
+          {
+            const marketId = (parsed as any).marketId;
+            await manager.update(MarketEntity, { onChainId: marketId }, { status: 'draft' }); // Or maybe a 'cancelled' status if you have it
+            this.logger.log(`Market ${marketId} canceled on-chain.`);
           }
           break;
       }
