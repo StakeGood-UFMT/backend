@@ -662,6 +662,9 @@ export class AnchorError extends Error {
         super(message);
         this.name = 'AnchorError';
         this.code = code;
-        this.statusCode = statusCode;
+        // If the upstream third-party API returns 401 (e.g. invalid Etherfuse API key),
+        // we convert it to 502 Bad Gateway so NestJS doesn't return 401 to the frontend,
+        // which would trigger a false JWT refresh loop and log the user out.
+        this.statusCode = statusCode === 401 ? 502 : statusCode;
     }
 }

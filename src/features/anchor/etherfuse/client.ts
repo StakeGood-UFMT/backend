@@ -227,6 +227,11 @@ export class EtherfuseClient implements Anchor {
         const statusMap: Record<string, KycStatus> = {
             not_started: 'not_started',
             proposed: 'pending',
+            pending: 'pending',
+            under_review: 'pending',
+            processing: 'pending',
+            submitted: 'pending',
+            reviewing: 'pending',
             approved: 'approved',
             approved_chain_deploying: 'approved',
             rejected: 'rejected',
@@ -486,7 +491,11 @@ export class EtherfuseClient implements Anchor {
      */
     async getQuote(input: GetQuoteInput): Promise<Quote> {
         const quoteId = crypto.randomUUID();
-        const [sourceAsset, targetAsset] = ['BRL','TESOURO:GC3CW7EDYRTWQ635VDIGY6S4ZUF5L6TQ7AA4MWS7LEQDBLUSZXV7UPS4'];
+        const [sourceAsset, targetAsset] = await this.resolveAssetPair(
+            input.fromCurrency,
+            input.toCurrency,
+            input.stellarAddress || '',
+        );
 
         // Determine ramp direction: if the source resolved to a CODE:ISSUER it's crypto → offramp
         const type = sourceAsset.includes(':') ? 'offramp' : 'onramp';

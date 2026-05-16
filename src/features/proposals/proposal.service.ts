@@ -107,6 +107,7 @@ export class ProposalService {
       feePlatformBps,
       feeGamificationBps,
       ngoCandidateIds: proposal.ngoCandidateIds ?? [],
+      assetCode: proposal.assetCode,
     });
   }
 
@@ -157,6 +158,7 @@ export class ProposalService {
         feePlatform: 0.01,
         feeGamification: 0.005,
         ngoCandidateIds: proposal.ngoCandidateIds ?? [],
+        assetCode: proposal.assetCode || 'XLM',
       });
 
       const savedMarket = await this.marketRepo.save(market);

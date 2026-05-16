@@ -81,6 +81,9 @@ export class ProposalEntity {
   @Column({ name: 'ngo_candidate_ids', type: 'jsonb', default: [] })
   ngoCandidateIds: number[];
 
+  @Column({ name: 'asset_code', length: 20, nullable: true })
+  assetCode?: string;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
