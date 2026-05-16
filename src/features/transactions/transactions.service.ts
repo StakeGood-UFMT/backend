@@ -214,10 +214,10 @@ export class TransactionsService {
           action: 'place_prediction',
           market: { id: market.id, title: market.title },
           outcome: dto.outcome,
-          amount: `${dto.amount} XLM`,
+          amount: `${dto.amount} ${market.assetCode || 'XLM'}`,
           implied_probability: impliedProbability.toFixed(3),
           implied_odds: payoutMultiplier.toFixed(2),
-          potential_win: `${potentialWin.toFixed(2)} XLM`,
+          potential_win: `${potentialWin.toFixed(2)} ${market.assetCode || 'XLM'}`,
         },
       };
     }
@@ -253,10 +253,10 @@ export class TransactionsService {
         action: 'place_prediction',
         market: { id: market.id, title: market.title },
         outcome: dto.outcome,
-        amount: `${dto.amount} XLM`,
+        amount: `${dto.amount} ${market.assetCode || 'XLM'}`,
         implied_probability: impliedProbability.toFixed(3),
         implied_odds: payoutMultiplier.toFixed(2),
-        potential_win: `${potentialWin.toFixed(2)} XLM`,
+        potential_win: `${potentialWin.toFixed(2)} ${market.assetCode || 'XLM'}`,
       },
     };
   }
@@ -328,7 +328,7 @@ export class TransactionsService {
         summary: {
           action: 'claim_reward',
           market: { id: market.id, title: market.title },
-          amount: `${position.payoutAmount} XLM`,
+          amount: `${position.payoutAmount} ${market.assetCode || 'XLM'}`,
         },
       };
     }
@@ -362,7 +362,7 @@ export class TransactionsService {
       summary: {
         action: 'claim_reward',
         market: { id: market.id, title: market.title },
-        amount: `${position.payoutAmount} XLM`,
+        amount: `${position.payoutAmount} ${market.assetCode || 'XLM'}`,
       },
     };
   }

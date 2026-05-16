@@ -54,4 +54,8 @@ export class CreateProposalDto {
   @IsInt({ each: true })
   @Min(1, { each: true })
   ngoCandidateIds: number[];
+
+  @IsString()
+  @IsOptional()
+  assetCode?: string;
 }

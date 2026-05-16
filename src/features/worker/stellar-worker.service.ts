@@ -74,13 +74,25 @@ interface ParsedRewardClaimed {
   amount: string;
 }
 
+interface ParsedMarketLocked {
+  kind: 'Market:Locked';
+  marketId: string;
+}
+
+interface ParsedMarketCanceled {
+  kind: 'Market:Canceled';
+  marketId: string;
+}
+
 type ParsedEvent =
   | ParsedNgoRegistered
   | ParsedNgoDeactivated
   | ParsedMarketCreated
   | ParsedMarketResolved
   | ParsedImpactDistributed
-  | ParsedRewardClaimed;
+  | ParsedRewardClaimed
+  | ParsedMarketLocked
+  | ParsedMarketCanceled;
 
 @Injectable()
 export class StellarWorkerService implements OnModuleInit, OnModuleDestroy {
@@ -333,14 +345,14 @@ export class StellarWorkerService implements OnModuleInit, OnModuleDestroy {
       const marketId =
         toBigintLikeString(asTuple(body)?.[0]) ?? toBigintLikeString(body) ?? null;
       if (!marketId) return null;
-      return { kind: 'Market:Locked' as any, marketId };
+      return { kind: 'Market:Locked', marketId };
     }
 
     if (namespace === 'Market' && action === 'Canceled') {
       const marketId =
         toBigintLikeString(asTuple(body)?.[0]) ?? toBigintLikeString(body) ?? null;
       if (!marketId) return null;
-      return { kind: 'Market:Canceled' as any, marketId };
+      return { kind: 'Market:Canceled', marketId };
     }
 
     if (namespace === 'Market' && action === 'Created') {

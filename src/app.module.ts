@@ -21,6 +21,7 @@ import { NgoProposalsModule } from './features/ngo-proposals/ngo-proposals.modul
 import { SettingsModule } from './features/settings/settings.module';
 import { LeaderboardModule } from './features/leaderboard/leaderboard.module';
 import { LegalModule } from './features/legal/legal.module';
+import { AnchorModule } from './features/anchor/anchor.module';
 
 @Module({
   imports: [
@@ -128,6 +129,7 @@ import { LegalModule } from './features/legal/legal.module';
     SettingsModule,
     LeaderboardModule,
     LegalModule,
+    AnchorModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -260,6 +260,42 @@ export class AdminService {
     };
   }
 
+  private getAssetContractIdByCode(assetCode?: string): string {
+    if (!assetCode || assetCode === 'XLM') {
+      return this.getAssetContractId();
+    }
+
+    const envContractId = this.config.get<string>(`STELLAR_${assetCode}_CONTRACT_ID`);
+    if (envContractId) return envContractId;
+
+    const passphrase = this.getNetworkPassphrase();
+    const envIssuer = this.config.get<string>(`STELLAR_${assetCode}_ISSUER`);
+    if (envIssuer) {
+      try {
+        return new StellarSdk.Asset(assetCode, envIssuer).contractId(passphrase);
+      } catch {
+        throw new BadRequestException(`Invalid issuer for ${assetCode}`);
+      }
+    }
+
+    let issuer = 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5';
+    if (assetCode === 'CETES' || assetCode === 'TESOURO') {
+      issuer = 'GC3CW7EDYRTWQ635VDIGY6S4ZUF5L6TQ7AA4MWS7LEQDBLUSZXV7UPS4';
+    } else if (assetCode === 'USDC') {
+      issuer = 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5';
+    } else if (assetCode === 'EURC') {
+      issuer = 'GBAUFLWGZU3ZED57DFF3H27H2EPUW7A3US6TD54C2A3US6TD54C2A3US';
+    } else if (assetCode === 'BRZ') {
+      issuer = 'GA7BI4JIZK6Q5Z4Z7ED57DFF3H27H2EPUW7A3US6TD54C2A3US6TD54C';
+    }
+
+    try {
+      return new StellarSdk.Asset(assetCode, issuer).contractId(passphrase);
+    } catch {
+      return StellarSdk.Asset.native().contractId(passphrase);
+    }
+  }
+
   async buildCreateMarketXdr(params: {
     adminWallet: string;
     marketId: bigint;
@@ -270,10 +306,11 @@ export class AdminService {
     ngoCandidateIds: number[];
     oracleWallet?: string;
     assetContractId?: string;
+    assetCode?: string;
   }): Promise<{ xdr: string; txHash: string; onChainId: string }> {
     const contractId = this.getContractId();
     const oracleWallet = params.oracleWallet ?? params.adminWallet;
-    const assetContractId = params.assetContractId ?? this.getAssetContractId();
+    const assetContractId = params.assetContractId ?? this.getAssetContractIdByCode(params.assetCode);
 
     const lockTs = BigInt(Math.floor(params.lockAt.getTime() / 1000));
     const adminAddr = this.parseAddress(params.adminWallet, 'admin wallet');
@@ -376,6 +413,7 @@ export class AdminService {
       feePlatformBps,
       feeGamificationBps,
       ngoCandidateIds: dto.ngoCandidateIds ?? [],
+      assetCode: dto.assetCode,
     });
 
     await this.dataSource.transaction(async (manager) => {

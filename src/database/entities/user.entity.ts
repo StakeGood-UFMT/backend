@@ -63,6 +63,9 @@ export class UserEntity {
   @Column({ name: 'spending_window_days', type: 'int', default: 30 })
   spendingWindowDays: number;
 
+  @Column({ name: 'anchor_customer_id', type: 'uuid', nullable: true })
+  anchorCustomerId?: string;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
