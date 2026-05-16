@@ -12,6 +12,7 @@ import { SavedFiatAccountEntity } from '../../database/entities/saved-fiat-accou
 import { QuoteEntity } from '../../database/entities/quote.entity';
 import { RampOrderEntity } from '../../database/entities/ramp-order.entity';
 import { EtherfuseClient } from './etherfuse/client';
+import * as StellarSdk from '@stellar/stellar-sdk';
 
 @Injectable()
 export class AnchorService {
@@ -64,23 +65,36 @@ export class AnchorService {
     return { customer: newCustomer, user };
   }
 
-  async getKycUrl(userId: string) {
+  async getKycUrl(userId: string, currency?: string) {
     const { customer, user } = await this.getCustomer(userId);
-    const url = await this.etherfuse.getKycUrl(customer.id, user.primaryWallet);
+
+    const accounts = await this.etherfuse.getFiatAccounts(customer.id);
+    const expectedType = currency?.toUpperCase() === 'BRL' ? 'PIX' : 'SPEI';
+    const matchingAccount = accounts.find((a) => a.type.toUpperCase() === expectedType);
+    const existingBankAccountId = matchingAccount ? matchingAccount.id : undefined;
+
+    const url = await this.etherfuse.getKycUrl(customer.id, user.primaryWallet, existingBankAccountId);
     return { url };
   }
 
+
   async getKycStatus(userId: string) {
     const { customer, user } = await this.getCustomer(userId);
-    const status = await this.etherfuse.getKycStatus(customer.id, user.primaryWallet);
+    let status = await this.etherfuse.getKycStatus(customer.id, user.primaryWallet);
 
     // CRITICAL SYNC: If approved in Anchor, verify user in StakeGood
     if (status === 'approved' && user.kycStatus !== 'verified') {
       user.kycStatus = 'verified';
       await this.userRepo.save(user);
-    } else if (status === 'pending' && user.kycStatus !== 'pending') {
-      user.kycStatus = 'pending';
-      await this.userRepo.save(user);
+    } else if (status === 'pending') {
+      // In Sandbox/Dev, if the user was already explicitly verified locally (via Mock Verify or Auto-Approve),
+      // do not downgrade them back to pending just because Etherfuse sandbox simulates manual review.
+      if (user.kycStatus === 'verified') {
+        status = 'approved';
+      } else if (user.kycStatus !== 'pending') {
+        user.kycStatus = 'pending';
+        await this.userRepo.save(user);
+      }
     }
 
     return { status, localKycStatus: user.kycStatus };
@@ -218,5 +232,93 @@ export class AnchorService {
   async simulatePayment(orderId: string) {
     const status = await this.etherfuse.simulateFiatReceived(orderId);
     return { status };
+  }
+
+  async sandboxAutoApproveKyc(userId: string) {
+    const { customer, user } = await this.getCustomer(userId);
+
+    try {
+      await this.etherfuse.submitKycIdentity(customer.id, {
+        pubkey: user.primaryWallet,
+        identity: {
+          id: user.primaryWallet,
+          name: {
+            givenName: 'Sandbox',
+            familyName: 'AutoApproved',
+          },
+          dateOfBirth: '1990-01-01',
+          address: {
+            street: '123 Sandbox Blvd',
+            city: 'Mexico City',
+            region: 'CDMX',
+            postalCode: '01000',
+            country: 'MX',
+          },
+          idNumbers: [
+            {
+              value: 'SANDBOX1234567890',
+              type: 'CURP',
+            },
+          ],
+        },
+      });
+    } catch (e) {
+      console.warn('Etherfuse sandbox auto-approve call returned error or already approved:', e?.message || e);
+    }
+
+    try {
+      const accounts = await this.etherfuse.getFiatAccounts(customer.id);
+      for (const acc of accounts) {
+        const presignedUrl = await this.etherfuse.getKycUrl(customer.id, user.primaryWallet, acc.id);
+        await this.etherfuse.acceptAgreements(presignedUrl);
+        console.log(`Successfully accepted Etherfuse agreements for account ${acc.id} in sandbox.`);
+      }
+      if (accounts.length === 0) {
+        const presignedUrl = await this.etherfuse.getKycUrl(customer.id, user.primaryWallet);
+        await this.etherfuse.acceptAgreements(presignedUrl);
+        console.log('Successfully accepted Etherfuse agreements for new customer in sandbox.');
+      }
+    } catch (e) {
+      console.warn('Etherfuse sandbox accept agreements call returned error:', e?.message || e);
+    }
+
+    if (user.kycStatus !== 'verified') {
+      user.kycStatus = 'verified';
+      await this.userRepo.save(user);
+    }
+
+    return { status: 'approved', localKycStatus: user.kycStatus };
+  }
+
+  async createTrustline(userId: string, dto: { assetCode: string; assetIssuer: string }) {
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+
+    const horizonUrl = this.config.get<string>(
+      'STELLAR_HORIZON_URL',
+      'https://horizon-testnet.stellar.org',
+    );
+    const networkPassphrase = this.config.get<string>(
+      'STELLAR_NETWORK_PASSPHRASE',
+      StellarSdk.Networks.TESTNET,
+    );
+
+    const horizon = new StellarSdk.Horizon.Server(horizonUrl);
+    const account = await horizon.loadAccount(user.primaryWallet);
+    const asset = new StellarSdk.Asset(dto.assetCode, dto.assetIssuer);
+
+    const op = StellarSdk.Operation.changeTrust({
+      asset,
+    });
+
+    const tx = new StellarSdk.TransactionBuilder(account, {
+      fee: '10000',
+      networkPassphrase,
+    })
+      .addOperation(op)
+      .setTimeout(StellarSdk.TimeoutInfinite)
+      .build();
+
+    return { xdr: tx.toXDR() };
   }
 }

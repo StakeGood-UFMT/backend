@@ -504,6 +504,7 @@ export class SettingsService {
         claimed_at: claimed ? p.updatedAt.toISOString() : undefined,
         tx_hash: p.txHash ?? undefined,
         impact_generated_by_user: 0,
+        asset_code: market?.assetCode ?? 'XLM',
       };
     });
   }

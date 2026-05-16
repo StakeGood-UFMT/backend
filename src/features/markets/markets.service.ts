@@ -530,7 +530,7 @@ export class MarketsService {
       outcome: market.outcome ?? null,
       oracle_ref: market.oracleRef ?? null, // V3 field
       oracle_url: market.oracleUrl ?? null, // BE-21 field
-      asset_code: market.assetCode ?? null,
+      asset_code: market.assetCode ?? 'XLM',
       asset_issuer: market.assetIssuer ?? null,
       contract_address: market.contractAddress ?? null,
       fee_ngo: Number(market.feeNgo),
