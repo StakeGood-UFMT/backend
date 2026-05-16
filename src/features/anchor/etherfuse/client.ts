@@ -537,8 +537,22 @@ export class EtherfuseClient implements Anchor {
         let bankAccountId = input.bankAccountId;
         if (!bankAccountId && input.customerId) {
             const accounts = await this.getFiatAccounts(input.customerId);
-            if (accounts.length > 0) {
+            const expectedType = input.fromCurrency.toUpperCase() === 'BRL' ? 'PIX' : 'SPEI';
+            const matchingAccount = accounts.find((a) => a.type.toUpperCase() === expectedType);
+            if (matchingAccount) {
+                bankAccountId = matchingAccount.id;
+            } else if (accounts.length > 0) {
                 bankAccountId = accounts[0].id;
+            }
+        }
+
+        if (bankAccountId && input.customerId) {
+            try {
+                const presignedUrl = await this.getKycUrl(input.customerId, input.stellarAddress, bankAccountId);
+                await this.acceptAgreements(presignedUrl);
+                console.log(`[Etherfuse] Automatically accepted agreements for bankAccountId: ${bankAccountId}`);
+            } catch (e) {
+                console.warn('[Etherfuse] Failed to accept agreements before order creation:', e?.message || e);
             }
         }
 
@@ -643,8 +657,22 @@ export class EtherfuseClient implements Anchor {
         let bankAccountId = input.fiatAccountId;
         if (!bankAccountId && input.customerId) {
             const accounts = await this.getFiatAccounts(input.customerId);
-            if (accounts.length > 0) {
+            const expectedType = input.toCurrency.toUpperCase() === 'BRL' ? 'PIX' : 'SPEI';
+            const matchingAccount = accounts.find((a) => a.type.toUpperCase() === expectedType);
+            if (matchingAccount) {
+                bankAccountId = matchingAccount.id;
+            } else if (accounts.length > 0) {
                 bankAccountId = accounts[0].id;
+            }
+        }
+
+        if (bankAccountId && input.customerId) {
+            try {
+                const presignedUrl = await this.getKycUrl(input.customerId, input.stellarAddress, bankAccountId);
+                await this.acceptAgreements(presignedUrl);
+                console.log(`[Etherfuse] Automatically accepted agreements for bankAccountId: ${bankAccountId}`);
+            } catch (e) {
+                console.warn('[Etherfuse] Failed to accept agreements before order creation:', e?.message || e);
             }
         }
 

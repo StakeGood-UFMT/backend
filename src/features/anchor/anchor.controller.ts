@@ -6,6 +6,7 @@ import {
   Param,
   UseGuards,
   Request,
+  Query,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { AnchorService } from './anchor.service';
@@ -17,8 +18,11 @@ export class AnchorController {
   constructor(private readonly anchorService: AnchorService) {}
 
   @Get('kyc/url')
-  getKycUrl(@Request() req: ExpressRequest & { user?: { [key: string]: any } }) {
-    return this.anchorService.getKycUrl(req.user?.userId);
+  getKycUrl(
+    @Request() req: ExpressRequest & { user?: { [key: string]: any } },
+    @Query('currency') currency?: string,
+  ) {
+    return this.anchorService.getKycUrl(req.user?.userId, currency);
   }
 
   @Get('kyc/status')
@@ -71,5 +75,18 @@ export class AnchorController {
   @Post('sandbox/simulate-payment')
   simulatePayment(@Body() body: { orderId: string }) {
     return this.anchorService.simulatePayment(body.orderId);
+  }
+
+  @Post('sandbox/auto-approve-kyc')
+  sandboxAutoApproveKyc(@Request() req: ExpressRequest & { user?: { [key: string]: any } }) {
+    return this.anchorService.sandboxAutoApproveKyc(req.user?.userId);
+  }
+
+  @Post('trustline')
+  createTrustline(
+    @Body() body: { assetCode: string; assetIssuer: string },
+    @Request() req: ExpressRequest & { user?: { [key: string]: any } },
+  ) {
+    return this.anchorService.createTrustline(req.user?.userId, body);
   }
 }
