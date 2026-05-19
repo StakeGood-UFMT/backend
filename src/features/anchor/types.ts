@@ -194,6 +194,10 @@ export interface SavedFiatAccount {
     bankName: string;
     /** Full name of the account holder. */
     accountHolderName: string;
+    /** Current status of the account. */
+    status?: string;
+    /** Compliance status of the account. */
+    compliant?: boolean;
     /** ISO 8601 creation timestamp. */
     createdAt: string;
 }

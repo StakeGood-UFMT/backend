@@ -61,6 +61,9 @@ export class NgoEntity {
   })
   totalFundsReceived: number;
 
+  @Column({ type: 'jsonb', default: {} })
+  balances: Record<string, number>;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

@@ -72,12 +72,15 @@ export interface EtherfuseOrderRequest {
 
 /** SPEI-shaped account body for Mexican (CLABE) bank-account registration. */
 export interface EtherfuseSpeiAccountBody {
-    /** 18-digit CLABE interbank code. */
+    transactionId: string;
+    firstName: string;
+    paternalLastName: string;
+    maternalLastName: string;
+    birthDate: string;
+    birthCountryIsoCode: string;
+    curp: string;
+    rfc: string;
     clabe: string;
-    /** Name of the account beneficiary. */
-    beneficiary: string;
-    /** Name of the bank. */
-    bankName?: string;
 }
 
 /** PIX-shaped account body for Brazilian bank-account registration. */
@@ -100,6 +103,10 @@ export interface EtherfuseBankAccountRequest {
     presignedUrl: string;
     /** Bank account details — discriminated by which fields are present. */
     account: EtherfuseSpeiAccountBody | EtherfusePixAccountBody;
+    /** If true, skips automatic approval in sandbox/devnet environments. */
+    skipAutoApproval?: boolean;
+    /** Optional display label for the bank account. */
+    label?: string;
 }
 
 /** Request body for `POST /ramp/customer/{id}/kyc` (programmatic KYC identity submission). */
@@ -110,6 +117,12 @@ export interface EtherfuseKycIdentityRequest {
     identity: {
         /** Identity identifier (typically the pubkey). */
         id: string;
+        /** Customer email address. */
+        email: string;
+        /** Customer phone number (E.164 format). */
+        phoneNumber: string;
+        /** Customer occupation. */
+        occupation: string;
         /** Customer name. */
         name: {
             /** First name. */

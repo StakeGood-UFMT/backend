@@ -18,8 +18,11 @@ export class AuthController {
       limit: 5,
     },
   })
-  getNonce(@Query('wallet') wallet: string) {
-    return this.authService.generateNonce(wallet);
+  getNonce(
+    @Query('wallet') wallet: string,
+    @Query('network') network?: string,
+  ) {
+    return this.authService.generateNonce(wallet, network);
   }
 
   @Post('verify')

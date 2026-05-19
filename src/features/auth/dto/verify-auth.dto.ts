@@ -1,4 +1,4 @@
-import { IsString, Length } from 'class-validator';
+import { IsString, Length, IsOptional } from 'class-validator';
 
 export class VerifyAuthDto {
   @IsString()
@@ -11,4 +11,8 @@ export class VerifyAuthDto {
 
   @IsString()
   signature: string;
+
+  @IsOptional()
+  @IsString()
+  network?: string;
 }
