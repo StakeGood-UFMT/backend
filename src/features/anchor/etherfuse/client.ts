@@ -54,6 +54,10 @@ import type {
     EtherfuseOrderStatus,
     EtherfuseKycIdentityRequest,
     EtherfuseKycDocumentRequest,
+    EtherfuseBankAccountRequest,
+    EtherfuseBankAccountResponse,
+    EtherfuseSpeiAccountBody,
+    EtherfusePixAccountBody,
 } from './types';
 
 /**
@@ -384,6 +388,35 @@ export class EtherfuseClient implements Anchor {
         const publicKey = input.publicKey;
 
         try {
+            try {
+                await this.createChildOrganization({
+                    id: customerId,
+                    displayName: input.email || `Customer ${customerId}`,
+                    accountType: 'personal',
+                    userInfo: {
+                        email: input.email || `${customerId}@stakegood.com`,
+                        displayName: 'Customer'
+                    },
+                    wallets: [
+                        { publicKey, blockchain: this.blockchain }
+                    ]
+                });
+                console.log(`[Etherfuse] Successfully created child organization for customer: ${customerId}`);
+            } catch (orgErr: any) {
+                console.warn(`[Etherfuse] Failed to create child organization:`, orgErr?.message || orgErr);
+            }
+
+            try {
+                await this.registerWallet(customerId, {
+                    publicKey,
+                    blockchain: this.blockchain,
+                    claimOwnership: false
+                });
+                console.log(`[Etherfuse] Successfully registered wallet ${publicKey} for customer ${customerId}`);
+            } catch (walletErr: any) {
+                console.warn(`[Etherfuse] Explicit wallet registration returned error/warning:`, walletErr?.message || walletErr);
+            }
+
             await this.request<EtherfuseOnboardingResponse>('POST', '/ramp/onboarding-url', {
                 customerId,
                 bankAccountId,
@@ -410,6 +443,17 @@ export class EtherfuseClient implements Anchor {
                     console.log(
                         `[Etherfuse] Public key already registered, using existing customer: ${existingCustomerId}`,
                     );
+
+                    try {
+                        await this.registerWallet(existingCustomerId, {
+                            publicKey,
+                            blockchain: this.blockchain,
+                            claimOwnership: false
+                        });
+                        console.log(`[Etherfuse] Successfully registered wallet ${publicKey} for recovered customer ${existingCustomerId}`);
+                    } catch (walletErr: any) {
+                        console.warn(`[Etherfuse] Explicit wallet registration for recovered customer returned error/warning:`, walletErr?.message || walletErr);
+                    }
 
                     // Fetch the customer's existing bank accounts from Etherfuse
                     let existingBankAccountId: string | undefined;
@@ -538,31 +582,156 @@ export class EtherfuseClient implements Anchor {
         if (!bankAccountId && input.customerId) {
             const accounts = await this.getFiatAccounts(input.customerId);
             const expectedType = input.fromCurrency.toUpperCase() === 'BRL' ? 'PIX' : 'SPEI';
-            const matchingAccount = accounts.find((a) => a.type.toUpperCase() === expectedType);
-            if (matchingAccount) {
-                bankAccountId = matchingAccount.id;
-            } else if (accounts.length > 0) {
-                bankAccountId = accounts[0].id;
+            const activeAccount = accounts.find((a) => a.type.toUpperCase() === expectedType && a.status === 'active');
+            if (activeAccount) {
+                bankAccountId = activeAccount.id;
+            } else {
+                const existingAccount = accounts.find((a) => a.type.toUpperCase() === expectedType);
+                try {
+                    const isBrl = input.fromCurrency.toUpperCase() === 'BRL';
+                    const tempBankAccountId = existingAccount ? existingAccount.id : crypto.randomUUID();
+
+                    try {
+                        await this.registerWallet(input.customerId, {
+                            publicKey: input.stellarAddress,
+                            blockchain: this.blockchain,
+                            claimOwnership: false
+                        });
+                        console.log(`[Etherfuse] Automatically registered wallet ${input.stellarAddress} for customer: ${input.customerId}`);
+                    } catch (walletErr: any) {
+                        console.warn('[Etherfuse] Auto-register wallet returned warning:', walletErr?.message || walletErr);
+                    }
+
+                    await this.registerBankAccountProgrammatically(input.customerId, {
+                        skipAutoApproval: false,
+                        bankAccountId: tempBankAccountId,
+                        account: isBrl ? {
+                            pixKey: '+5511999999999',
+                            pixKeyType: 'phone',
+                            firstName: 'Sandbox',
+                            lastName: 'AutoApproved',
+                            cpf: '12345678901'
+                        } : {
+                            transactionId: tempBankAccountId,
+                            firstName: 'Sandbox',
+                            paternalLastName: 'Auto',
+                            maternalLastName: 'Approved',
+                            birthDate: '19900101',
+                            birthCountryIsoCode: 'MX',
+                            curp: 'GALJ900101HDFRRN09',
+                            rfc: 'GALJ9001016V3',
+                            clabe: '012345678901234567'
+                        }
+                    });
+                    console.log(`[Etherfuse] Successfully registered mock ${expectedType} bank account programmatically: ${tempBankAccountId}`);
+                    bankAccountId = tempBankAccountId;
+                } catch (registerErr: any) {
+                    console.warn('[Etherfuse] Failed to automatically register bank account programmatically:', registerErr?.message || registerErr);
+                    if (accounts.length > 0) {
+                        bankAccountId = accounts[0].id;
+                    }
+                }
             }
         }
 
         if (bankAccountId && input.customerId) {
             try {
+                await this.submitKycIdentity(input.customerId, {
+                    pubkey: input.stellarAddress,
+                    identity: {
+                        id: input.stellarAddress,
+                        email: 'sandbox@stakegood.com',
+                        phoneNumber: '+5511999999999',
+                        occupation: 'Software Engineer',
+                        name: { givenName: 'Sandbox', familyName: 'AutoApproved' },
+                        dateOfBirth: '1990-01-01',
+                        address: {
+                            street: '123 Sandbox Blvd',
+                            city: 'Mexico City',
+                            region: 'CDMX',
+                            postalCode: '01000',
+                            country: 'MX',
+                        },
+                        idNumbers: [
+                            { value: 'SANDBOX1234567890', type: 'CURP' },
+                            { value: 'SANDBOX123456', type: 'RFC' },
+                        ],
+                    },
+                });
+                console.log(`[Etherfuse] Automatically submitted KYC identity for customerId: ${input.customerId}`);
+            } catch (e: any) {
+                console.warn('[Etherfuse] Auto-submit KYC identity returned warning (already exists or missing field):', e?.message || e);
+            }
+
+            try {
                 const presignedUrl = await this.getKycUrl(input.customerId, input.stellarAddress, bankAccountId);
                 await this.acceptAgreements(presignedUrl);
                 console.log(`[Etherfuse] Automatically accepted agreements for bankAccountId: ${bankAccountId}`);
-            } catch (e) {
+            } catch (e: any) {
                 console.warn('[Etherfuse] Failed to accept agreements before order creation:', e?.message || e);
             }
         }
 
-        const response = await this.request<EtherfuseCreateOnRampResponse>('POST', '/ramp/order', {
-            orderId,
-            bankAccountId,
-            publicKey: input.stellarAddress,
-            quoteId: input.quoteId,
-            memo: input.memo || undefined,
-        });
+        let response: EtherfuseCreateOnRampResponse;
+        try {
+            response = await this.request<EtherfuseCreateOnRampResponse>('POST', '/ramp/order', {
+                orderId,
+                bankAccountId,
+                publicKey: input.stellarAddress,
+                quoteId: input.quoteId,
+                memo: input.memo || undefined,
+            });
+        } catch (err: any) {
+            if ((err instanceof AnchorError || err?.name === 'AnchorError') && err.statusCode === 400 && err.message?.includes('Terms and conditions')) {
+                console.warn('[Etherfuse] Order creation failed with Terms & Conditions error. Retrying agreement acceptance and order creation...');
+                // Wait 3 seconds for backend propagation
+                await new Promise((resolve) => setTimeout(resolve, 3000));
+                if (bankAccountId && input.customerId) {
+                    try {
+                        await this.submitKycIdentity(input.customerId, {
+                            pubkey: input.stellarAddress,
+                            identity: {
+                                id: input.stellarAddress,
+                                email: 'sandbox@stakegood.com',
+                                phoneNumber: '+5511999999999',
+                                occupation: 'Software Engineer',
+                                name: { givenName: 'Sandbox', familyName: 'AutoApproved' },
+                                dateOfBirth: '1990-01-01',
+                                address: {
+                                    street: '123 Sandbox Blvd',
+                                    city: 'Mexico City',
+                                    region: 'CDMX',
+                                    postalCode: '01000',
+                                    country: 'MX',
+                                },
+                                idNumbers: [
+                                    { value: 'SANDBOX1234567890', type: 'CURP' },
+                                    { value: 'SANDBOX123456', type: 'RFC' },
+                                ],
+                            },
+                        });
+                    } catch (e: any) {
+                        console.warn('[Etherfuse] Retry auto-submit KYC identity returned warning:', e?.message || e);
+                    }
+
+                    try {
+                        const presignedUrl = await this.getKycUrl(input.customerId, input.stellarAddress, bankAccountId);
+                        await this.acceptAgreements(presignedUrl);
+                    } catch (e: any) {
+                        console.warn('[Etherfuse] Retry accept agreements failed:', e?.message || e);
+                    }
+                }
+                response = await this.request<EtherfuseCreateOnRampResponse>('POST', '/ramp/order', {
+                    orderId,
+                    bankAccountId,
+                    publicKey: input.stellarAddress,
+                    quoteId: input.quoteId,
+                    memo: input.memo || undefined,
+                });
+            } else {
+                throw err;
+            }
+        }
 
         const { onramp } = response;
 
@@ -621,13 +790,18 @@ export class EtherfuseClient implements Anchor {
             );
 
             return response.items.map((account) => {
-                const isPix = !!account.pixKey;
+                const isPix =
+                    !!account.pixKey ||
+                    !!account.pixKeyType ||
+                    (account as any).currency?.toLowerCase() === 'brl';
                 return {
                     id: account.bankAccountId,
                     type: isPix ? 'PIX' : 'SPEI',
                     accountNumber: isPix ? (account.pixKey ?? '') : (account.abbrClabe ?? ''),
                     bankName: '',
                     accountHolderName: account.accountHolderName ?? '',
+                    status: account.status,
+                    compliant: account.compliant,
                     createdAt: account.createdAt,
                 };
             });
@@ -658,31 +832,156 @@ export class EtherfuseClient implements Anchor {
         if (!bankAccountId && input.customerId) {
             const accounts = await this.getFiatAccounts(input.customerId);
             const expectedType = input.toCurrency.toUpperCase() === 'BRL' ? 'PIX' : 'SPEI';
-            const matchingAccount = accounts.find((a) => a.type.toUpperCase() === expectedType);
-            if (matchingAccount) {
-                bankAccountId = matchingAccount.id;
-            } else if (accounts.length > 0) {
-                bankAccountId = accounts[0].id;
+            const activeAccount = accounts.find((a) => a.type.toUpperCase() === expectedType && a.status === 'active');
+            if (activeAccount) {
+                bankAccountId = activeAccount.id;
+            } else {
+                const existingAccount = accounts.find((a) => a.type.toUpperCase() === expectedType);
+                try {
+                    const isBrl = input.toCurrency.toUpperCase() === 'BRL';
+                    const tempBankAccountId = existingAccount ? existingAccount.id : crypto.randomUUID();
+
+                    try {
+                        await this.registerWallet(input.customerId, {
+                            publicKey: input.stellarAddress,
+                            blockchain: this.blockchain,
+                            claimOwnership: false
+                        });
+                        console.log(`[Etherfuse] Automatically registered wallet ${input.stellarAddress} for customer: ${input.customerId}`);
+                    } catch (walletErr: any) {
+                        console.warn('[Etherfuse] Auto-register wallet returned warning for offramp:', walletErr?.message || walletErr);
+                    }
+
+                    await this.registerBankAccountProgrammatically(input.customerId, {
+                        skipAutoApproval: false,
+                        bankAccountId: tempBankAccountId,
+                        account: isBrl ? {
+                            pixKey: '+5511999999999',
+                            pixKeyType: 'phone',
+                            firstName: 'Sandbox',
+                            lastName: 'AutoApproved',
+                            cpf: '12345678901'
+                        } : {
+                            transactionId: tempBankAccountId,
+                            firstName: 'Sandbox',
+                            paternalLastName: 'Auto',
+                            maternalLastName: 'Approved',
+                            birthDate: '19900101',
+                            birthCountryIsoCode: 'MX',
+                            curp: 'GALJ900101HDFRRN09',
+                            rfc: 'GALJ9001016V3',
+                            clabe: '012345678901234567'
+                        }
+                    });
+                    console.log(`[Etherfuse] Successfully registered mock ${expectedType} bank account for offramp programmatically: ${tempBankAccountId}`);
+                    bankAccountId = tempBankAccountId;
+                } catch (registerErr: any) {
+                    console.warn('[Etherfuse] Failed to automatically register bank account for offramp programmatically:', registerErr?.message || registerErr);
+                    if (accounts.length > 0) {
+                        bankAccountId = accounts[0].id;
+                    }
+                }
             }
         }
 
         if (bankAccountId && input.customerId) {
             try {
+                await this.submitKycIdentity(input.customerId, {
+                    pubkey: input.stellarAddress,
+                    identity: {
+                        id: input.stellarAddress,
+                        email: 'sandbox@stakegood.com',
+                        phoneNumber: '+5511999999999',
+                        occupation: 'Software Engineer',
+                        name: { givenName: 'Sandbox', familyName: 'AutoApproved' },
+                        dateOfBirth: '1990-01-01',
+                        address: {
+                            street: '123 Sandbox Blvd',
+                            city: 'Mexico City',
+                            region: 'CDMX',
+                            postalCode: '01000',
+                            country: 'MX',
+                        },
+                        idNumbers: [
+                            { value: 'SANDBOX1234567890', type: 'CURP' },
+                            { value: 'SANDBOX123456', type: 'RFC' },
+                        ],
+                    },
+                });
+                console.log(`[Etherfuse] Automatically submitted KYC identity for customerId: ${input.customerId}`);
+            } catch (e: any) {
+                console.warn('[Etherfuse] Auto-submit KYC identity returned warning (already exists or missing field):', e?.message || e);
+            }
+
+            try {
                 const presignedUrl = await this.getKycUrl(input.customerId, input.stellarAddress, bankAccountId);
                 await this.acceptAgreements(presignedUrl);
                 console.log(`[Etherfuse] Automatically accepted agreements for bankAccountId: ${bankAccountId}`);
-            } catch (e) {
+            } catch (e: any) {
                 console.warn('[Etherfuse] Failed to accept agreements before order creation:', e?.message || e);
             }
         }
 
-        const response = await this.request<EtherfuseCreateOffRampResponse>('POST', '/ramp/order', {
-            orderId,
-            bankAccountId,
-            publicKey: input.stellarAddress,
-            quoteId: input.quoteId,
-            memo: input.memo || undefined,
-        });
+        let response: EtherfuseCreateOffRampResponse;
+        try {
+            response = await this.request<EtherfuseCreateOffRampResponse>('POST', '/ramp/order', {
+                orderId,
+                bankAccountId,
+                publicKey: input.stellarAddress,
+                quoteId: input.quoteId,
+                memo: input.memo || undefined,
+            });
+        } catch (err: any) {
+            if ((err instanceof AnchorError || err?.name === 'AnchorError') && err.statusCode === 400 && err.message?.includes('Terms and conditions')) {
+                console.warn('[Etherfuse] Order creation failed with Terms & Conditions error. Retrying agreement acceptance and order creation...');
+                // Wait 3 seconds for backend propagation
+                await new Promise((resolve) => setTimeout(resolve, 3000));
+                if (bankAccountId && input.customerId) {
+                    try {
+                        await this.submitKycIdentity(input.customerId, {
+                            pubkey: input.stellarAddress,
+                            identity: {
+                                id: input.stellarAddress,
+                                email: 'sandbox@stakegood.com',
+                                phoneNumber: '+5511999999999',
+                                occupation: 'Software Engineer',
+                                name: { givenName: 'Sandbox', familyName: 'AutoApproved' },
+                                dateOfBirth: '1990-01-01',
+                                address: {
+                                    street: '123 Sandbox Blvd',
+                                    city: 'Mexico City',
+                                    region: 'CDMX',
+                                    postalCode: '01000',
+                                    country: 'MX',
+                                },
+                                idNumbers: [
+                                    { value: 'SANDBOX1234567890', type: 'CURP' },
+                                    { value: 'SANDBOX123456', type: 'RFC' },
+                                ],
+                            },
+                        });
+                    } catch (e: any) {
+                        console.warn('[Etherfuse] Retry auto-submit KYC identity returned warning:', e?.message || e);
+                    }
+
+                    try {
+                        const presignedUrl = await this.getKycUrl(input.customerId, input.stellarAddress, bankAccountId);
+                        await this.acceptAgreements(presignedUrl);
+                    } catch (e: any) {
+                        console.warn('[Etherfuse] Retry accept agreements failed:', e?.message || e);
+                    }
+                }
+                response = await this.request<EtherfuseCreateOffRampResponse>('POST', '/ramp/order', {
+                    orderId,
+                    bankAccountId,
+                    publicKey: input.stellarAddress,
+                    quoteId: input.quoteId,
+                    memo: input.memo || undefined,
+                });
+            } else {
+                throw err;
+            }
+        }
 
         const { offramp } = response;
 
@@ -752,6 +1051,17 @@ export class EtherfuseClient implements Anchor {
                 'MISSING_PUBLIC_KEY',
                 400,
             );
+        }
+
+        try {
+            await this.registerWallet(customerId, {
+                publicKey,
+                blockchain: this.blockchain,
+                claimOwnership: false
+            });
+            console.log(`[Etherfuse] Explicitly registered wallet ${publicKey} for customer ${customerId} in getKycUrl`);
+        } catch (walletErr: any) {
+            console.warn(`[Etherfuse] Wallet registration in getKycUrl returned warning:`, walletErr?.message || walletErr);
         }
 
         const resolvedBankAccountId = bankAccountId || crypto.randomUUID();
@@ -855,6 +1165,99 @@ export class EtherfuseClient implements Anchor {
     }
 
     /**
+     * Register a bank account for a customer.
+     *
+     * @param request - Bank account registration request details.
+     * @returns The registered bank account response.
+     * @throws {AnchorError} On API failure.
+     */
+    async registerBankAccount(
+        request: EtherfuseBankAccountRequest,
+    ): Promise<EtherfuseBankAccountResponse> {
+        return this.request<EtherfuseBankAccountResponse>('POST', '/ramp/bank-account', request);
+    }
+
+    /**
+     * Programmatically create a bank account for a customer using API key authentication.
+     *
+     * @param customerId - The customer's unique identifier.
+     * @param request - Bank account details and auto-approval flag.
+     * @returns The registered bank account response.
+     * @throws {AnchorError} On API failure.
+     */
+    async registerBankAccountProgrammatically(
+        customerId: string,
+        request: {
+            account: EtherfuseSpeiAccountBody | EtherfusePixAccountBody;
+            skipAutoApproval?: boolean;
+            label?: string;
+            bankAccountId?: string;
+        },
+    ): Promise<EtherfuseBankAccountResponse> {
+        return this.request<EtherfuseBankAccountResponse>(
+            'POST',
+            `/ramp/customer/${customerId}/bank-account`,
+            request,
+        );
+    }
+
+    /**
+     * Programmatically register a wallet for a customer.
+     *
+     * @param customerId - The customer's unique identifier.
+     * @param request - Wallet details (publicKey, blockchain, claimOwnership).
+     * @returns The registered wallet response.
+     * @throws {AnchorError} On API failure.
+     */
+    async registerWallet(
+        customerId: string,
+        request: {
+            publicKey: string;
+            blockchain: string;
+            claimOwnership?: boolean;
+        },
+    ): Promise<unknown> {
+        return this.request(
+            'POST',
+            `/ramp/customer/${customerId}/wallet`,
+            request,
+        );
+    }
+
+    /**
+     * Create a child organization.
+     *
+     * @param request - Child organization details.
+     * @returns The created organization response.
+     * @throws {AnchorError} On API failure.
+     */
+    async createChildOrganization(request: {
+        id: string;
+        displayName: string;
+        accountType: 'personal' | 'business';
+        userInfo?: {
+            email: string;
+            displayName: string;
+        };
+        wallets?: Array<{
+            publicKey: string;
+            blockchain: string;
+        }>;
+    }): Promise<{
+        organizationId: string;
+        displayName: string;
+        accountType: string;
+        wallets: Array<{
+            id: string;
+            publicKey: string;
+            blockchain: string;
+        }>;
+        bankAccount: unknown;
+    }> {
+        return this.request('POST', '/ramp/organization', request);
+    }
+
+    /**
      * Accept the electronic signature consent agreement.
      *
      * @param presignedUrl - The presigned URL from the onboarding response.
@@ -909,9 +1312,57 @@ export class EtherfuseClient implements Anchor {
      * @throws {AnchorError} On API failure.
      */
     async acceptAgreements(presignedUrl: string): Promise<EtherfuseAgreementResponse> {
-        await this.acceptElectronicSignature(presignedUrl);
-        await this.acceptTermsAndConditions(presignedUrl);
-        return this.acceptCustomerAgreement(presignedUrl);
+        console.log('[Etherfuse] Starting sequential acceptance of all legal agreements...');
+        
+        // 1. Electronic Signature
+        let resSig: EtherfuseAgreementResponse | undefined;
+        for (let i = 1; i <= 3; i++) {
+            try {
+                resSig = await this.acceptElectronicSignature(presignedUrl);
+                console.log('[Etherfuse] Electronic Signature accepted successfully:', JSON.stringify(resSig));
+                break;
+            } catch (err: any) {
+                console.warn(`[Etherfuse] Electronic Signature attempt ${i} failed:`, err?.message || err);
+                if (i === 3) throw err;
+                await new Promise((r) => setTimeout(r, 1500));
+            }
+        }
+        await new Promise((r) => setTimeout(r, 1000)); // Delay between agreements
+
+        // 2. Terms and Conditions
+        let resTerms: EtherfuseAgreementResponse | undefined;
+        for (let i = 1; i <= 3; i++) {
+            try {
+                resTerms = await this.acceptTermsAndConditions(presignedUrl);
+                console.log('[Etherfuse] Terms and Conditions accepted successfully:', JSON.stringify(resTerms));
+                break;
+            } catch (err: any) {
+                console.warn(`[Etherfuse] Terms and Conditions attempt ${i} failed:`, err?.message || err);
+                if (i === 3) throw err;
+                await new Promise((r) => setTimeout(r, 1500));
+            }
+        }
+        await new Promise((r) => setTimeout(r, 1000)); // Delay between agreements
+
+        // 3. Customer Agreement
+        let resCust: EtherfuseAgreementResponse | undefined;
+        for (let i = 1; i <= 3; i++) {
+            try {
+                resCust = await this.acceptCustomerAgreement(presignedUrl);
+                console.log('[Etherfuse] Customer Agreement accepted successfully:', JSON.stringify(resCust));
+                break;
+            } catch (err: any) {
+                console.warn(`[Etherfuse] Customer Agreement attempt ${i} failed:`, err?.message || err);
+                if (i === 3) throw err;
+                await new Promise((r) => setTimeout(r, 1500));
+            }
+        }
+        
+        // CRITICAL DELAY: Allow Etherfuse sandbox read replicas / async queues to synchronize
+        console.log('[Etherfuse] All agreements accepted. Waiting 3000ms for sandbox backend state propagation...');
+        await new Promise((r) => setTimeout(r, 3000));
+
+        return resCust!;
     }
 
     /**

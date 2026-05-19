@@ -21,10 +21,21 @@ export class NgosController {
 
   private mapNgo(ngo: any) {
     const social = ngo?.social ?? {};
-    const total = Number(ngo?.totalFundsReceived ?? 0);
-    const totalFormatted = Number.isFinite(total)
-      ? `${total.toFixed(2)} USDC`
-      : '0.00 USDC';
+    
+    const balances = ngo?.balances ?? {};
+    const balanceEntries = Object.entries(balances);
+    let totalFormatted = '';
+
+    if (balanceEntries.length > 0) {
+      totalFormatted = balanceEntries
+        .map(([currency, amount]) => `${Number(amount).toFixed(2)} ${currency}`)
+        .join(' + ');
+    } else {
+      const total = Number(ngo?.totalFundsReceived ?? 0);
+      totalFormatted = Number.isFinite(total) && total > 0
+        ? `${total.toFixed(2)} USDC`
+        : '0.00 USDC';
+    }
 
     return {
       id: ngo.id,

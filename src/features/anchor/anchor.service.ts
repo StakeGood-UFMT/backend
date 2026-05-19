@@ -13,6 +13,7 @@ import { QuoteEntity } from '../../database/entities/quote.entity';
 import { RampOrderEntity } from '../../database/entities/ramp-order.entity';
 import { EtherfuseClient } from './etherfuse/client';
 import * as StellarSdk from '@stellar/stellar-sdk';
+import * as crypto from 'crypto';
 
 @Injectable()
 export class AnchorService {
@@ -238,10 +239,24 @@ export class AnchorService {
     const { customer, user } = await this.getCustomer(userId);
 
     try {
+      await this.etherfuse.registerWallet(customer.id, {
+        publicKey: user.primaryWallet,
+        blockchain: 'stellar',
+        claimOwnership: false
+      });
+      console.log(`[Sandbox Setup] Successfully registered wallet ${user.primaryWallet} for customer ${customer.id}`);
+    } catch (e: any) {
+      console.warn('[Sandbox Setup] Wallet registration returned error/warning:', e?.message || e);
+    }
+
+    try {
       await this.etherfuse.submitKycIdentity(customer.id, {
         pubkey: user.primaryWallet,
         identity: {
           id: user.primaryWallet,
+          email: 'sandbox@stakegood.com',
+          phoneNumber: '+5511999999999',
+          occupation: 'Software Engineer',
           name: {
             givenName: 'Sandbox',
             familyName: 'AutoApproved',
@@ -259,6 +274,10 @@ export class AnchorService {
               value: 'SANDBOX1234567890',
               type: 'CURP',
             },
+            {
+              value: 'SANDBOX123456',
+              type: 'RFC',
+            },
           ],
         },
       });
@@ -268,18 +287,91 @@ export class AnchorService {
 
     try {
       const accounts = await this.etherfuse.getFiatAccounts(customer.id);
-      for (const acc of accounts) {
+      
+      const speiAcc = accounts.find(a => a.type.toUpperCase() === 'SPEI');
+      const hasActiveSpei = speiAcc && speiAcc.status === 'active';
+
+      const pixAcc = accounts.find(a => a.type.toUpperCase() === 'PIX');
+      const hasActivePix = pixAcc && pixAcc.status === 'active';
+
+      if (!hasActiveSpei) {
+        try {
+          const tempBankAccountId = speiAcc ? speiAcc.id : crypto.randomUUID();
+          await this.etherfuse.registerBankAccountProgrammatically(customer.id, {
+            skipAutoApproval: false,
+            bankAccountId: tempBankAccountId,
+            account: {
+              transactionId: tempBankAccountId,
+              firstName: 'Sandbox',
+              paternalLastName: 'Auto',
+              maternalLastName: 'Approved',
+              birthDate: '19900101',
+              birthCountryIsoCode: 'MX',
+              curp: 'GALJ900101HDFRRN09',
+              rfc: 'GALJ9001016V3',
+              clabe: '012345678901234567'
+            }
+          });
+          console.log(`[Sandbox Setup] Programmatically registered/activated mock SPEI bank account: ${tempBankAccountId}`);
+        } catch (err: any) {
+          console.warn('[Sandbox Setup] Failed to register/activate mock SPEI bank account:', err?.message || err);
+        }
+      }
+
+      if (!hasActivePix) {
+        try {
+          const tempBankAccountId = pixAcc ? pixAcc.id : crypto.randomUUID();
+          await this.etherfuse.registerBankAccountProgrammatically(customer.id, {
+            skipAutoApproval: false,
+            bankAccountId: tempBankAccountId,
+            account: {
+              pixKey: '+5511999999999',
+              pixKeyType: 'phone',
+              firstName: 'Sandbox',
+              lastName: 'AutoApproved',
+              cpf: '12345678901'
+            }
+          });
+          console.log(`[Sandbox Setup] Programmatically registered/activated mock PIX bank account: ${tempBankAccountId}`);
+        } catch (err: any) {
+          console.warn('[Sandbox Setup] Failed to register/activate mock PIX bank account:', err?.message || err);
+        }
+      }
+    } catch (e) {
+      console.warn('Sandbox bank registration check failed:', e?.message || e);
+    }
+
+    try {
+      // Re-fetch to get all registered bank accounts, then accept agreements for each
+      const updatedAccounts = await this.etherfuse.getFiatAccounts(customer.id);
+      for (const acc of updatedAccounts) {
         const presignedUrl = await this.etherfuse.getKycUrl(customer.id, user.primaryWallet, acc.id);
         await this.etherfuse.acceptAgreements(presignedUrl);
         console.log(`Successfully accepted Etherfuse agreements for account ${acc.id} in sandbox.`);
       }
-      if (accounts.length === 0) {
+
+      if (updatedAccounts.length === 0) {
         const presignedUrl = await this.etherfuse.getKycUrl(customer.id, user.primaryWallet);
         await this.etherfuse.acceptAgreements(presignedUrl);
         console.log('Successfully accepted Etherfuse agreements for new customer in sandbox.');
       }
     } catch (e) {
       console.warn('Etherfuse sandbox accept agreements call returned error:', e?.message || e);
+    }
+
+    try {
+      console.log('[Sandbox Setup] Checking and waiting for bank accounts to become active...');
+      for (let i = 1; i <= 6; i++) {
+        const finalAccounts = await this.etherfuse.getFiatAccounts(customer.id);
+        const speiAcc = finalAccounts.find(a => a.type.toUpperCase() === 'SPEI');
+        console.log(`[Sandbox Setup] Verification poll ${i}: SPEI account status is "${speiAcc?.status || 'not_found'}"`);
+        if (speiAcc && speiAcc.status === 'active') {
+          break;
+        }
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+    } catch (e) {
+      console.warn('[Sandbox Setup] Failed to verify/poll bank account status:', e?.message || e);
     }
 
     if (user.kycStatus !== 'verified') {

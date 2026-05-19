@@ -660,14 +660,28 @@ export class StellarWorkerService implements OnModuleInit, OnModuleDestroy {
               ? await manager.findOne(NgoEntity, { where: { onChainId: onChainNgoId } })
               : null;
 
+            const newAmount = parseFloat(parsed.amount) / 10000000;
+            const currency = market?.assetCode || 'USDC';
+
             await manager.save(ImpactLedgerEntryEntity, {
               marketId: market?.id,
               ngoId: ngo?.id ?? parsed.ngoId,
-              amount: parseFloat(parsed.amount) / 10000000, // Stroops to USDC
+              amount: newAmount,
+              currency: currency,
               date: new Date(),
               source: 'fee_pool',
               txHash: event.txHash,
             });
+
+            if (ngo) {
+              ngo.totalFundsReceived = Number(ngo.totalFundsReceived || 0) + newAmount;
+              
+              const currentBalances = ngo.balances || {};
+              currentBalances[currency] = (Number(currentBalances[currency]) || 0) + newAmount;
+              ngo.balances = currentBalances;
+
+              await manager.save(NgoEntity, ngo);
+            }
 
             this.gateway.server.emit('impact_distributed', {
               marketId: market?.id,

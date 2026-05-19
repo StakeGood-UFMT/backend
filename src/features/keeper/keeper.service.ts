@@ -74,7 +74,11 @@ export class KeeperService {
     }
   }
 
-  async getEligibleMarkets(): Promise<AdminMarketTTLDto[]> {
+  async getEligibleMarkets(): Promise<{
+    markets: AdminMarketTTLDto[];
+    contract_ttl?: number;
+    latest_ledger: number;
+  }> {
     const markets = await this.marketRepo.find({
       where: {
         status: In(['active', 'locked']),
@@ -94,7 +98,11 @@ export class KeeperService {
     );
 
     if (!contractId) {
-      return markets.map((m) => this.toAdminMarketTtl(m, undefined, false));
+      return {
+        markets: markets.map((m) => this.toAdminMarketTtl(m, undefined, false)),
+        contract_ttl: undefined,
+        latest_ledger: 0,
+      };
     }
 
     const rpc = new StellarSdk.rpc.Server(rpcUrl, {
@@ -109,18 +117,43 @@ export class KeeperService {
       this.logger.warn(
         `Failed to load latest ledger from RPC; TTL will be omitted: ${e?.message ?? e}`,
       );
-      return markets.map((m) => this.toAdminMarketTtl(m, undefined, false));
+      return {
+        markets: markets.map((m) => this.toAdminMarketTtl(m, undefined, false)),
+        contract_ttl: undefined,
+        latest_ledger: 0,
+      };
     }
 
-    const contractScAddress = StellarSdk.Address.fromString(contractId).toScAddress();
-    const keysByXdr = new Map<string, MarketEntity>();
+    const keysByXdr = new Map<string, MarketEntity[]>();
     const ledgerKeys: any[] = [];
+    const seenXdr = new Set<string>();
+
+    // Add contract instance footprint to get global contract TTL
+    let contractFootprintXdr: string | undefined = undefined;
+    try {
+      const contractFootprint = new StellarSdk.Contract(contractId).getFootprint();
+      contractFootprintXdr = contractFootprint.toXDR('base64');
+      ledgerKeys.push(contractFootprint);
+      seenXdr.add(contractFootprintXdr);
+    } catch (err: any) {
+      this.logger.warn(`Failed to build contract footprint: ${err?.message ?? err}`);
+    }
 
     for (const market of markets) {
       if (!market.onChainId) continue;
       let u64: bigint;
       try {
         u64 = BigInt(market.onChainId);
+      } catch {
+        continue;
+      }
+
+      const cId = market.contractAddress || contractId;
+      if (!cId) continue;
+
+      let scAddress: StellarSdk.xdr.ScAddress;
+      try {
+        scAddress = StellarSdk.Address.fromString(cId).toScAddress();
       } catch {
         continue;
       }
@@ -132,27 +165,56 @@ export class KeeperService {
 
       const ledgerKey = StellarSdk.xdr.LedgerKey.contractData(
         new StellarSdk.xdr.LedgerKeyContractData({
-          contract: contractScAddress,
+          contract: scAddress,
           key: storageKey,
           durability: StellarSdk.xdr.ContractDataDurability.persistent(),
         }),
       );
 
-      ledgerKeys.push(ledgerKey);
-      keysByXdr.set(ledgerKey.toXDR('base64'), market);
+      const keyXdr = ledgerKey.toXDR('base64');
+      if (!seenXdr.has(keyXdr)) {
+        seenXdr.add(keyXdr);
+        ledgerKeys.push(ledgerKey);
+      }
+
+      const existing = keysByXdr.get(keyXdr) ?? [];
+      existing.push(market);
+      keysByXdr.set(keyXdr, existing);
     }
 
+    let contractTtl: number | undefined = undefined;
     let ttlByMarketId = new Map<string, number>();
+
     if (ledgerKeys.length) {
       try {
         const resp = await rpc.getLedgerEntries(...ledgerKeys);
+        this.logger.log(`getLedgerEntries retornou ${resp?.entries?.length ?? 0} entradas para ${ledgerKeys.length} chaves solicitadas.`);
+
         for (const entry of resp.entries ?? []) {
           const keyXdr = entry.key.toXDR('base64');
-          const market = keysByXdr.get(keyXdr);
-          if (!market) continue;
-          if (typeof entry.liveUntilLedgerSeq !== 'number') continue;
-          const remaining = Math.max(0, entry.liveUntilLedgerSeq - latestLedgerSeq);
-          ttlByMarketId.set(market.id, remaining);
+          const liveUntil = entry.liveUntilLedgerSeq != null ? Number(entry.liveUntilLedgerSeq) : undefined;
+
+          if (liveUntil == null || isNaN(liveUntil)) {
+            this.logger.warn(`Entrada sem liveUntilLedgerSeq válido para a chave: ${keyXdr}`);
+            continue;
+          }
+
+          const remaining = Math.max(0, liveUntil - latestLedgerSeq);
+
+          if (contractFootprintXdr && keyXdr === contractFootprintXdr) {
+            contractTtl = remaining;
+            this.logger.log(`TTL do contrato global calculado: ${contractTtl} ledgers restantes.`);
+            continue;
+          }
+
+          const matchedMarkets = keysByXdr.get(keyXdr);
+          if (matchedMarkets) {
+            for (const market of matchedMarkets) {
+              ttlByMarketId.set(market.id, remaining);
+            }
+          } else {
+            this.logger.warn(`Chave XDR retornada não corresponde a nenhum mercado mapeado: ${keyXdr}`);
+          }
         }
       } catch (e: any) {
         this.logger.warn(
@@ -161,12 +223,18 @@ export class KeeperService {
       }
     }
 
-    return markets.map((m) => {
+    const marketsDto = markets.map((m) => {
       const ttl = ttlByMarketId.get(m.id);
       const eligible =
         typeof ttl === 'number' ? ttl <= threshold : false;
       return this.toAdminMarketTtl(m, ttl, eligible);
     });
+
+    return {
+      markets: marketsDto,
+      contract_ttl: contractTtl,
+      latest_ledger: latestLedgerSeq,
+    };
   }
 
   private toAdminMarketTtl(
