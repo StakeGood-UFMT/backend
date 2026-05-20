@@ -20,6 +20,7 @@ import { TwoFactorService } from '../auth/two-factor.service';
 import { In } from 'typeorm';
 import { UserPositionEntity } from '../../database/entities/user-position.entity';
 import { MarketEntity } from '../../database/entities/market.entity';
+import { KycProfileEntity } from '../../database/entities/kyc-profile.entity';
 
 @Injectable()
 export class SettingsService {
@@ -32,6 +33,8 @@ export class SettingsService {
     private readonly positionRepo: Repository<UserPositionEntity>,
     @InjectRepository(MarketEntity)
     private readonly marketRepo: Repository<MarketEntity>,
+    @InjectRepository(KycProfileEntity)
+    private readonly kycProfileRepo: Repository<KycProfileEntity>,
     private readonly twoFactorService: TwoFactorService,
   ) {}
 
@@ -507,5 +510,101 @@ export class SettingsService {
         asset_code: market?.assetCode ?? 'XLM',
       };
     });
+  }
+
+  async getActivity(userId: string) {
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+
+    const activityList: any[] = [];
+
+    // 1. KYC Activity
+    const kycProfile = await this.kycProfileRepo.findOne({ where: { userId } });
+    if (kycProfile) {
+      let description = 'Identity verification is currently under review.';
+      if (kycProfile.status === 'approved') {
+        description = 'Your identity verification was successfully approved.';
+      } else if (kycProfile.status === 'rejected') {
+        description = 'Your identity verification was rejected.';
+      } else if (kycProfile.status === 'expired') {
+        description = 'Your identity verification has expired.';
+      }
+      activityList.push({
+        id: kycProfile.id,
+        type: 'kyc',
+        title: 'KYC Identity Verification',
+        description,
+        status: kycProfile.status,
+        date: kycProfile.verifiedAt || kycProfile.updatedAt || kycProfile.createdAt,
+      });
+    } else if (user.kycStatus === 'verified') {
+      activityList.push({
+        id: 'kyc-fallback',
+        type: 'kyc',
+        title: 'KYC Identity Verification',
+        description: 'Your identity verification was successfully approved.',
+        status: 'approved',
+        date: user.updatedAt || user.createdAt,
+      });
+    }
+
+    // 2. Gateway Customer Registration
+    if (user.anchorCustomerId) {
+      activityList.push({
+        id: 'gateway-reg',
+        type: 'gateway',
+        title: 'Gateway Customer Registered',
+        description: `Successfully registered in the Fiat ↔ Crypto gateway (ID: ${user.anchorCustomerId}).`,
+        status: 'completed',
+        date: user.createdAt,
+      });
+    }
+
+    // 3. Stakes / Predictions
+    const positions = await this.positionRepo.find({
+      where: { userId },
+      order: { createdAt: 'DESC' },
+    });
+
+    if (positions.length > 0) {
+      const marketIds = Array.from(new Set(positions.map((p) => p.marketId)));
+      const markets = await this.marketRepo.findBy({ id: In(marketIds) });
+      const marketById = new Map(markets.map((m) => [m.id, m]));
+
+      for (const pos of positions) {
+        const market = marketById.get(pos.marketId);
+        const marketTitle = market?.title ?? pos.marketId;
+        const assetCode = market?.assetCode ?? 'CETES';
+        
+        let desc = `Placed stake of ${Number(pos.amountStaked)} ${assetCode} on "${pos.outcome}" for market "${marketTitle}".`;
+        if (pos.status === 'resolved') {
+          desc += ` Market resolved. Payout: ${Number(pos.payoutAmount ?? 0)} ${assetCode}.`;
+        } else if (pos.status === 'claimed') {
+          desc += ` Payout of ${Number(pos.payoutAmount ?? 0)} ${assetCode} claimed.`;
+        }
+
+        activityList.push({
+          id: pos.id,
+          type: 'stake',
+          title: `Prediction: ${pos.outcome}`,
+          description: desc,
+          status: pos.status,
+          date: pos.createdAt,
+          metadata: {
+            marketId: pos.marketId,
+            marketTitle,
+            amount: Number(pos.amountStaked),
+            outcome: pos.outcome,
+            txHash: pos.txHash,
+            payoutAmount: Number(pos.payoutAmount ?? 0),
+            status: pos.status,
+          },
+        });
+      }
+    }
+
+    activityList.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    return activityList;
   }
 }
