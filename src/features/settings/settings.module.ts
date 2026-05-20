@@ -6,6 +6,7 @@ import { UserEntity } from '../../database/entities/user.entity';
 import { UserDetailsEntity } from '../../database/entities/user-details.entity';
 import { UserPositionEntity } from '../../database/entities/user-position.entity';
 import { MarketEntity } from '../../database/entities/market.entity';
+import { KycProfileEntity } from '../../database/entities/kyc-profile.entity';
 import { AuthModule } from '../auth/auth.module';
 
 @Module({
@@ -15,6 +16,7 @@ import { AuthModule } from '../auth/auth.module';
       UserDetailsEntity,
       UserPositionEntity,
       MarketEntity,
+      KycProfileEntity,
     ]),
     AuthModule,
   ],

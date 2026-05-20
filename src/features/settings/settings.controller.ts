@@ -116,6 +116,11 @@ export class SettingsController {
     return this.settingsService.getClaims(req.user.userId);
   }
 
+  @Get('activity')
+  getActivity(@Request() req: any) {
+    return this.settingsService.getActivity(req.user.userId);
+  }
+
   /**
    * GET /api/v1/users/me/2fa
    * Returns the current 2FA status.
