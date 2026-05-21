@@ -430,8 +430,8 @@ export class SettingsService {
     await this.detailsRepo.update(details.id, {
       totpSecret: encryptedSecret,
       totpEnabled: true,
-      pending2faSecret: null,
-      pending2faSecretExpiresAt: null,
+      pending2faSecret: undefined,
+      pending2faSecretExpiresAt: undefined,
     });
 
     return {

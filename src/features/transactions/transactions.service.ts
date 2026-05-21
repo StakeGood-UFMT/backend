@@ -508,7 +508,7 @@ export class TransactionsService {
           throw new BadRequestException('Transaction user wallet mismatch');
         }
 
-        if (BigInt(market.onChainId) !== BigInt(decodedMarketId)) {
+        if (!market.onChainId || BigInt(market.onChainId) !== BigInt(decodedMarketId)) {
           throw new BadRequestException('Transaction market ID mismatch');
         }
 
