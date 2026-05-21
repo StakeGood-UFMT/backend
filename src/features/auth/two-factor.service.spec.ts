@@ -50,12 +50,13 @@ describe('TwoFactorService', () => {
 
     it('should verify token with a small time offset (within 30s window)', () => {
       const secret = service.generateSecret();
-      // Mocking Date.now to simulate a 20-second delay
       const realNow = Date.now;
-      const twentySecondsLater = realNow() + 20000;
-      
+      const baseTime = 120000; // exactly at a 30s step boundary
+
+      global.Date.now = jest.fn(() => baseTime);
       const token = generateSync({ secret });
       
+      const twentySecondsLater = baseTime + 20000;
       global.Date.now = jest.fn(() => twentySecondsLater);
       const isValid = service.verifyToken(secret, token);
       
@@ -66,10 +67,12 @@ describe('TwoFactorService', () => {
     it('should reject token with large time offset (outside 30s window)', () => {
       const secret = service.generateSecret();
       const realNow = Date.now;
-      const twoMinutesLater = realNow() + 120000;
-      
+      const baseTime = 120000;
+
+      global.Date.now = jest.fn(() => baseTime);
       const token = generateSync({ secret });
       
+      const twoMinutesLater = baseTime + 120000;
       global.Date.now = jest.fn(() => twoMinutesLater);
       const isValid = service.verifyToken(secret, token);
       

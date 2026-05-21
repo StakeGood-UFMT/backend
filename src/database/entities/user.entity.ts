@@ -66,6 +66,9 @@ export class UserEntity {
   @Column({ name: 'anchor_customer_id', type: 'uuid', nullable: true })
   anchorCustomerId?: string;
 
+  @Column({ name: 'admin_joined_at', type: 'timestamp', nullable: true })
+  adminJoinedAt?: Date;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

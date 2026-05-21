@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import { UserEntity } from '../../database/entities/user.entity';
 import { AuthNonceEntity } from '../../database/entities/auth-nonce.entity';
@@ -42,6 +43,17 @@ describe('AuthService – KYC Webhook', () => {
         },
         { provide: JwtService, useValue: { sign: jest.fn() } },
         { provide: StakeGoodGateway, useValue: mockGateway },
+        {
+          provide: ConfigService,
+          useValue: {
+            get: jest.fn((key: string, def?: any) => {
+              if (key === 'ADMIN_WALLETS') {
+                return 'GCWD3PDC7WSRPRXZQ4A6L724VV2UXSRAOWE2HYLJSSDGUG4AGXTUX5D4';
+              }
+              return def ?? '';
+            }),
+          },
+        },
       ],
     }).compile();
 
@@ -144,7 +156,7 @@ describe('AuthService – KYC Webhook', () => {
       });
 
       expect(mockGateway.emitKycStatusUpdated).toHaveBeenCalledWith(
-        'user-uuid',
+        'GABC',
         expect.objectContaining({ status: 'verified' }),
       );
     });

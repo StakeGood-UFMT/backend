@@ -123,6 +123,8 @@ describe('TransactionsService', () => {
       lockAt: new Date(Date.now() + 100000),
       contractAddress:
         'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4',
+      onChainId: '1',
+      ngoCandidateIds: [1],
     };
 
     beforeEach(() => {
@@ -144,20 +146,20 @@ describe('TransactionsService', () => {
     });
 
     it('test_build_prediction_ok', async () => {
-      const dto = { market_id: 'm1', outcome: 'YES' as const, amount: '100' };
+      const dto = { market_id: 'm1', outcome: 'YES' as const, amount: '100', ngo_id: 1 };
       const result = await service.buildPrediction(dto, { userId: 'u1' });
 
       expect(result).toBeDefined();
       expect(result.xdr).toBeDefined();
       expect(result.summary.outcome).toBe('YES');
-      expect(result.summary.amount).toBe('100 USDC');
+      expect(result.summary.amount).toBe('100 XLM');
     });
 
     it('test_hedge_lock_violation_fails', async () => {
       // User already has a NO position
       userPositionRepo.findOne.mockResolvedValue({ outcome: 'NO' });
 
-      const dto = { market_id: 'm1', outcome: 'YES' as const, amount: '100' };
+      const dto = { market_id: 'm1', outcome: 'YES' as const, amount: '100', ngo_id: 1 };
 
       await expect(
         service.buildPrediction(dto, { userId: 'u1' }),
@@ -167,7 +169,7 @@ describe('TransactionsService', () => {
     it('test_kyc_required_fails', async () => {
       userRepo.findOne.mockResolvedValue({ ...mockUser, kycStatus: 'pending' });
 
-      const dto = { market_id: 'm1', outcome: 'YES' as const, amount: '100' };
+      const dto = { market_id: 'm1', outcome: 'YES' as const, amount: '100', ngo_id: 1 };
 
       await expect(
         service.buildPrediction(dto, { userId: 'u1' }),
