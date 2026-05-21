@@ -21,6 +21,7 @@ import { In } from 'typeorm';
 import { UserPositionEntity } from '../../database/entities/user-position.entity';
 import { MarketEntity } from '../../database/entities/market.entity';
 import { KycProfileEntity } from '../../database/entities/kyc-profile.entity';
+import { NgoEntity } from '../../database/entities/ngo.entity';
 
 @Injectable()
 export class SettingsService {
@@ -35,10 +36,28 @@ export class SettingsService {
     private readonly marketRepo: Repository<MarketEntity>,
     @InjectRepository(KycProfileEntity)
     private readonly kycProfileRepo: Repository<KycProfileEntity>,
+    @InjectRepository(NgoEntity)
+    private readonly ngoRepo: Repository<NgoEntity>,
     private readonly twoFactorService: TwoFactorService,
   ) {}
 
 
+
+  /** Build a compact NGO summary for API responses */
+  private mapNgoSummary(ngo: NgoEntity | undefined | null) {
+    if (!ngo) return null;
+    const social = (ngo as any).social ?? {};
+    return {
+      id: ngo.id,
+      on_chain_id: ngo.onChainId ?? null,
+      name: ngo.name,
+      slug: ngo.slug,
+      category: ngo.category ?? null,
+      logo_url: social.logo_url ?? social.logoUrl ?? null,
+      website_url: ngo.website ?? null,
+      verified: ngo.verified,
+    };
+  }
 
   // ─────────────────────────────────────────────
   //  Internal helpers
@@ -411,8 +430,8 @@ export class SettingsService {
     await this.detailsRepo.update(details.id, {
       totpSecret: encryptedSecret,
       totpEnabled: true,
-      pending2faSecret: null,
-      pending2faSecretExpiresAt: null,
+      pending2faSecret: undefined,
+      pending2faSecretExpiresAt: undefined,
     });
 
     return {
@@ -450,7 +469,7 @@ export class SettingsService {
 
   async getClaims(userId: string) {
     const positions = await this.positionRepo.find({
-      where: { userId, status: In(['resolved', 'claimed']) },
+      where: { userId, status: In(['confirmed', 'resolved', 'claimed']) },
       order: { updatedAt: 'DESC' },
     });
 
@@ -460,10 +479,32 @@ export class SettingsService {
     const markets = await this.marketRepo.findBy({ id: In(marketIds) });
     const marketById = new Map(markets.map((m) => [m.id, m]));
 
+    // Gather all ngo onChainIds referenced in those markets
+    const allNgoOnChainIds = Array.from(
+      new Set(
+        markets.flatMap((m) => m.ngoCandidateIds ?? []).filter((id) => id != null),
+      ),
+    );
+    const ngoEntities =
+      allNgoOnChainIds.length > 0
+        ? await this.ngoRepo.find({ where: { onChainId: In(allNgoOnChainIds) } })
+        : [];
+    const ngoByOnChainId = new Map(ngoEntities.map((n) => [n.onChainId!, n]));
+
     return positions.map((p) => {
       const market = marketById.get(p.marketId);
       const claimed = p.status === 'claimed';
       const amount = Number(p.payoutAmount ?? 0);
+
+      // NGO candidates for this market
+      const ngoCandidates = (market?.ngoCandidateIds ?? [])
+        .map((id) => this.mapNgoSummary(ngoByOnChainId.get(id)))
+        .filter(Boolean);
+
+      // NGO the user voted for (stored as ngoOnChainId on the position)
+      const votedNgo = p.ngoOnChainId != null
+        ? this.mapNgoSummary(ngoByOnChainId.get(p.ngoOnChainId))
+        : null;
 
       return {
         id: p.id,
@@ -477,6 +518,15 @@ export class SettingsService {
         tx_hash: p.txHash ?? undefined,
         impact_generated_by_user: 0,
         asset_code: market?.assetCode ?? 'XLM',
+        amount_staked: Number(p.amountStaked ?? 0),
+        outcome: p.outcome,
+        position_status: p.status,
+        created_at: p.createdAt.toISOString(),
+        market_outcome: market?.outcome,
+        market_status: market?.status,
+        market_lock_at: market?.lockAt ? market.lockAt.toISOString() : undefined,
+        ngo_voted: votedNgo,
+        ngo_candidates: ngoCandidates,
       };
     });
   }
@@ -540,6 +590,16 @@ export class SettingsService {
       const markets = await this.marketRepo.findBy({ id: In(marketIds) });
       const marketById = new Map(markets.map((m) => [m.id, m]));
 
+      // Load all NGOs referenced by any position (via ngoOnChainId)
+      const ngoOnChainIds = Array.from(
+        new Set(positions.map((p) => p.ngoOnChainId).filter((id) => id != null)),
+      ) as number[];
+      const ngoEntities =
+        ngoOnChainIds.length > 0
+          ? await this.ngoRepo.find({ where: { onChainId: In(ngoOnChainIds) } })
+          : [];
+      const ngoByOnChainId = new Map(ngoEntities.map((n) => [n.onChainId!, n]));
+
       for (const pos of positions) {
         const market = marketById.get(pos.marketId);
         const marketTitle = market?.title ?? pos.marketId;
@@ -551,6 +611,10 @@ export class SettingsService {
         } else if (pos.status === 'claimed') {
           desc += ` Payout of ${Number(pos.payoutAmount ?? 0)} ${assetCode} claimed.`;
         }
+
+        const votedNgo = pos.ngoOnChainId != null
+          ? this.mapNgoSummary(ngoByOnChainId.get(pos.ngoOnChainId))
+          : null;
 
         activityList.push({
           id: pos.id,
@@ -567,6 +631,7 @@ export class SettingsService {
             txHash: pos.txHash,
             payoutAmount: Number(pos.payoutAmount ?? 0),
             status: pos.status,
+            ngo_voted: votedNgo,
           },
         });
       }

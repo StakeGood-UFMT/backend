@@ -4,12 +4,13 @@ import { ProposalController } from './proposal.controller';
 import { ProposalService } from './proposal.service';
 import { ProposalEntity } from '../../database/entities/proposal.entity';
 import { MarketEntity } from '../../database/entities/market.entity';
+import { NgoEntity } from '../../database/entities/ngo.entity';
 import { AdminModule } from '../admin/admin.module';
 import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([ProposalEntity, MarketEntity]),
+    TypeOrmModule.forFeature([ProposalEntity, MarketEntity, NgoEntity]),
     forwardRef(() => AdminModule),
     AuthModule,
   ],
