@@ -67,17 +67,7 @@ export class SettingsController {
     return settings.wallets;
   }
 
-  /**
-   * POST /api/v1/users/me/wallets
-   * Simplified wallet linking (legacy/basic flow).
-   */
-  @Post('wallets')
-  async addWallet(@Request() req: any, @Body() dto: { address: string }) {
-    // For now, we'll use a simplified version of the linking logic
-    // In a real scenario, this should probably still use the challenge/verify flow
-    // but we'll adapt it to the frontend's current simple POST expectation.
-    return this.settingsService.addWalletSimple(req.user.userId, dto.address);
-  }
+
 
   /**
    * POST /api/v1/users/me/wallets/challenge

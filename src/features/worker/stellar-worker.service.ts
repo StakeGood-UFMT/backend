@@ -84,6 +84,14 @@ interface ParsedMarketCanceled {
   marketId: string;
 }
 
+interface ParsedStakePlaced {
+  kind: 'Stake:Placed';
+  marketId: string;
+  userWallet: string;
+  outcome: string;
+  amount: string;
+}
+
 type ParsedEvent =
   | ParsedNgoRegistered
   | ParsedNgoDeactivated
@@ -92,7 +100,8 @@ type ParsedEvent =
   | ParsedImpactDistributed
   | ParsedRewardClaimed
   | ParsedMarketLocked
-  | ParsedMarketCanceled;
+  | ParsedMarketCanceled
+  | ParsedStakePlaced;
 
 @Injectable()
 export class StellarWorkerService implements OnModuleInit, OnModuleDestroy {
@@ -452,6 +461,42 @@ export class StellarWorkerService implements OnModuleInit, OnModuleDestroy {
       };
     }
 
+    if (namespace === 'Stake' && action === 'Placed') {
+      const tuple = asTuple(body);
+      const marketId =
+        toBigintLikeString(tuple?.[0]) ??
+        toBigintLikeString(body?.market_id) ??
+        toBigintLikeString(body?.marketId) ??
+        null;
+      if (!marketId) return null;
+
+      const userWallet =
+        String(tuple?.[1] ?? '') ||
+        String(body?.user ?? '') ||
+        String(body?.user_wallet ?? '') ||
+        '';
+      if (!userWallet) return null;
+
+      const outcomeRaw =
+        toNumberLike(tuple?.[2]) ??
+        toNumberLike(body?.outcome) ??
+        null;
+      if (outcomeRaw === null) return null;
+
+      const amount =
+        toBigintLikeString(tuple?.[3]) ??
+        toBigintLikeString(body?.amount) ??
+        '0';
+
+      return {
+        kind: 'Stake:Placed',
+        marketId,
+        userWallet,
+        outcome: outcomeRaw === 1 ? 'YES' : 'NO',
+        amount,
+      };
+    }
+
     if (namespace === 'Market') {
       return null;
     }
@@ -726,6 +771,69 @@ export class StellarWorkerService implements OnModuleInit, OnModuleDestroy {
             );
           }
           break;
+
+        case 'Stake:Placed':
+          {
+            const market = await manager.findOne(MarketEntity, {
+              where: { onChainId: parsed.marketId },
+            });
+            if (!market) break;
+
+            const user = await manager.findOne(UserEntity, {
+              where: { primaryWallet: parsed.userWallet },
+            });
+            if (!user) break;
+
+            const amountStaked = parseFloat(parsed.amount) / 10000000;
+
+            const existingPending = await manager.findOne(UserPositionEntity, {
+              where: {
+                userId: user.id,
+                marketId: market.id,
+                txHash: event.txHash,
+              },
+            });
+
+            if (existingPending) {
+              await manager.update(
+                UserPositionEntity,
+                { id: existingPending.id },
+                {
+                  status: 'confirmed',
+                  amountStaked: amountStaked,
+                },
+              );
+            } else {
+              await manager.save(
+                UserPositionEntity,
+                manager.create(UserPositionEntity, {
+                  userId: user.id,
+                  marketId: market.id,
+                  outcome: parsed.outcome as any,
+                  amountStaked: amountStaked,
+                  status: 'confirmed',
+                  txHash: event.txHash,
+                }),
+              );
+            }
+
+            if (this.gateway?.server) {
+              this.gateway.server.emit('stake_placed', {
+                marketId: market.id,
+                userId: user.id,
+                outcome: parsed.outcome,
+                amount: amountStaked,
+              });
+            }
+
+            await this.notificationService.createNotification(
+              user.id,
+              `Your bet of ${amountStaked} USDC on "${market.title}" has been confirmed on-chain.`,
+              'bet_placed',
+            );
+          }
+          break;
+
         case 'Market:Locked' as any:
           {
             const marketId = (parsed as any).marketId;
