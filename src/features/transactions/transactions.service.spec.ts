@@ -146,7 +146,7 @@ describe('TransactionsService', () => {
     });
 
     it('test_build_prediction_ok', async () => {
-      const dto = { market_id: 'm1', outcome: 'YES' as const, amount: '100', ngo_id: '1' };
+      const dto = { market_id: 'm1', outcome: 'YES' as const, amount: '100', ngo_id: 1 };
       const result = await service.buildPrediction(dto, { userId: 'u1' });
 
       expect(result).toBeDefined();
@@ -159,7 +159,7 @@ describe('TransactionsService', () => {
       // User already has a NO position
       userPositionRepo.findOne.mockResolvedValue({ outcome: 'NO' });
 
-      const dto = { market_id: 'm1', outcome: 'YES' as const, amount: '100', ngo_id: '1' };
+      const dto = { market_id: 'm1', outcome: 'YES' as const, amount: '100', ngo_id: 1 };
 
       await expect(
         service.buildPrediction(dto, { userId: 'u1' }),
@@ -169,7 +169,7 @@ describe('TransactionsService', () => {
     it('test_kyc_required_fails', async () => {
       userRepo.findOne.mockResolvedValue({ ...mockUser, kycStatus: 'pending' });
 
-      const dto = { market_id: 'm1', outcome: 'YES' as const, amount: '100', ngo_id: '1' };
+      const dto = { market_id: 'm1', outcome: 'YES' as const, amount: '100', ngo_id: 1 };
 
       await expect(
         service.buildPrediction(dto, { userId: 'u1' }),
