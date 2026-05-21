@@ -68,6 +68,57 @@ export class MarketsService {
     return { yesPool, noPool, totalLiquidity };
   }
 
+  private async computePoolsForMarkets(marketIds: string[]) {
+    if (!marketIds.length) {
+      return new Map<string, { yesPool: number; noPool: number; totalLiquidity: number }>();
+    }
+    const rows = await this.userPositionRepo
+      .createQueryBuilder('p')
+      .select('p.market_id', 'marketId')
+      .addSelect(
+        "COALESCE(SUM(CASE WHEN p.outcome = 'YES' THEN p.amount_staked ELSE 0 END), 0)",
+        'yes',
+      )
+      .addSelect(
+        "COALESCE(SUM(CASE WHEN p.outcome = 'NO' THEN p.amount_staked ELSE 0 END), 0)",
+        'no',
+      )
+      .addSelect('COALESCE(SUM(p.amount_staked), 0)', 'total')
+      .where('p.market_id IN (:...marketIds)', { marketIds })
+      .andWhere("p.status IN ('pending','confirmed','resolved','claimed')")
+      .groupBy('p.market_id')
+      .getRawMany<{ marketId: string; yes: string; no: string; total: string }>();
+
+    const map = new Map<string, { yesPool: number; noPool: number; totalLiquidity: number }>();
+    for (const r of rows) {
+      const yesPool = Number(r.yes ?? 0);
+      const noPool = Number(r.no ?? 0);
+      const totalLiquidity = Number(r.total ?? yesPool + noPool);
+      map.set(r.marketId, { yesPool, noPool, totalLiquidity });
+    }
+    return map;
+  }
+
+  private async computeStakersForMarkets(marketIds: string[]) {
+    if (!marketIds.length) {
+      return new Map<string, number>();
+    }
+    const rows = await this.userPositionRepo
+      .createQueryBuilder('p')
+      .select('p.market_id', 'marketId')
+      .addSelect('COUNT(DISTINCT p.user_id)', 'count')
+      .where('p.market_id IN (:...marketIds)', { marketIds })
+      .andWhere("p.status IN ('pending','confirmed','resolved','claimed')")
+      .groupBy('p.market_id')
+      .getRawMany<{ marketId: string; count: string }>();
+
+    const map = new Map<string, number>();
+    for (const r of rows) {
+      map.set(r.marketId, Number(r.count ?? 0));
+    }
+    return map;
+  }
+
   async listPositions(marketId: string, limit = 25, offset = 0) {
     const safeLimit = Math.max(1, Math.min(50, Number(limit) || 25));
     const safeOffset = Math.max(0, Number(offset) || 0);
@@ -439,15 +490,27 @@ export class MarketsService {
 
     const [markets, total] = await qb.getManyAndCount();
 
-    const latestSnapshots = await this.getLatestSnapshotsForMarkets(
-      markets.map((m) => m.id),
-    );
+    const marketIds = markets.map((m) => m.id);
+    const latestSnapshots = await this.getLatestSnapshotsForMarkets(marketIds);
+    const computedPools = await this.computePoolsForMarkets(marketIds);
+    const computedStakers = await this.computeStakersForMarkets(marketIds);
 
     const items = markets.map((market) => {
       const snap = latestSnapshots.get(market.id);
-      const yesPool = Number(snap?.yesPool ?? 0);
-      const noPool = Number(snap?.noPool ?? 0);
-      const totalLiquidity = yesPool + noPool;
+      let yesPool = Number(snap?.yesPool ?? 0);
+      let noPool = Number(snap?.noPool ?? 0);
+      let totalLiquidity = yesPool + noPool;
+
+      if (totalLiquidity <= 0) {
+        const computed = computedPools.get(market.id);
+        if (computed) {
+          yesPool = computed.yesPool;
+          noPool = computed.noPool;
+          totalLiquidity = computed.totalLiquidity;
+        }
+      }
+
+      const stakersCount = computedStakers.get(market.id) ?? 0;
 
       return {
         id: market.id,
@@ -465,6 +528,7 @@ export class MarketsService {
         yes_price: totalLiquidity > 0 ? yesPool / totalLiquidity : 0.5,
         no_price: totalLiquidity > 0 ? noPool / totalLiquidity : 0.5,
         current_prices: snap ? this.formatPrices(snap) : null,
+        stakers_count: stakersCount,
         created_at: market.createdAt,
       };
     });
@@ -504,18 +568,15 @@ export class MarketsService {
     let noPool = Number(snap?.noPool ?? 0);
     let totalLiquidity = yesPool + noPool;
 
-    if (!snap) {
+    if (totalLiquidity <= 0) {
       const computed = await this.computePoolsFromPositions(id);
       yesPool = computed.yesPool;
       noPool = computed.noPool;
       totalLiquidity = computed.totalLiquidity;
     }
 
-    if (totalLiquidity <= 0) {
-      yesPool = 1;
-      noPool = 1;
-      totalLiquidity = 2;
-    }
+    const computedStakers = await this.computeStakersForMarkets([id]);
+    const stakersCount = computedStakers.get(id) ?? 0;
 
     return {
       id: market.id,
@@ -536,12 +597,13 @@ export class MarketsService {
       fee_ngo: Number(market.feeNgo),
       fee_platform: Number(market.feePlatform),
       fee_gamification: Number(market.feeGamification),
-      yes_price: yesPool / totalLiquidity, // Convenience price from main
-      no_price: noPool / totalLiquidity, // Convenience price from main
+      yes_price: totalLiquidity > 0 ? yesPool / totalLiquidity : 0.5, // Convenience price from main
+      no_price: totalLiquidity > 0 ? noPool / totalLiquidity : 0.5, // Convenience price from main
       yes_pool: yesPool,
       no_pool: noPool,
       total_liquidity: totalLiquidity.toFixed(2),
       current_prices: snap ? this.formatPrices(snap) : null,
+      stakers_count: stakersCount,
       created_at: market.createdAt,
       updated_at: market.updatedAt,
       resolution_rule: market.resolutionRule,
@@ -798,7 +860,7 @@ export class MarketsService {
       .addSelect('COUNT(p.id)', 'count')
       .addSelect('SUM(p.amount_staked)', 'totalAmount')
       .where('p.market_id = :marketId', { marketId })
-      .andWhere("p.status IN ('confirmed', 'resolved', 'claimed')")
+      .andWhere("p.status IN ('pending', 'confirmed', 'resolved', 'claimed')")
       .groupBy('p.ngo_on_chain_id')
       .getRawMany();
 
