@@ -7,13 +7,14 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import {
   ProposalEntity,
   ProposalStatus,
 } from '../../database/entities/proposal.entity';
 import { MarketEntity } from '../../database/entities/market.entity';
+import { NgoEntity } from '../../database/entities/ngo.entity';
 import { CreateProposalDto } from './dto/create-proposal.dto';
 import { ModerateProposalDto } from './dto/moderate-proposal.dto';
 import { AdminService } from '../admin/admin.service';
@@ -25,10 +26,27 @@ export class ProposalService {
     private readonly proposalRepo: Repository<ProposalEntity>,
     @InjectRepository(MarketEntity)
     private readonly marketRepo: Repository<MarketEntity>,
+    @InjectRepository(NgoEntity)
+    private readonly ngoRepo: Repository<NgoEntity>,
     @Inject(forwardRef(() => AdminService))
     private readonly adminService: AdminService,
     private readonly config: ConfigService,
   ) {}
+
+  private mapNgoSummary(ngo: NgoEntity | undefined | null) {
+    if (!ngo) return null;
+    const social = (ngo as any).social ?? {};
+    return {
+      id: ngo.id,
+      on_chain_id: ngo.onChainId ?? null,
+      name: ngo.name,
+      slug: ngo.slug,
+      category: ngo.category ?? null,
+      logo_url: social.logo_url ?? social.logoUrl ?? null,
+      website_url: ngo.website ?? null,
+      verified: ngo.verified,
+    };
+  }
 
   async create(dto: CreateProposalDto, userId: string) {
     const proposal = this.proposalRepo.create({
@@ -50,10 +68,31 @@ export class ProposalService {
 
   async findMine(userId: string, status?: ProposalStatus) {
     const where = status ? { userId, status } : { userId };
-    return this.proposalRepo.find({
+    const proposals = await this.proposalRepo.find({
       where,
       order: { createdAt: 'DESC' },
     });
+
+    if (proposals.length === 0) return proposals;
+
+    // Collect all NGO candidate onChainIds across all proposals
+    const allNgoOnChainIds = Array.from(
+      new Set(
+        proposals.flatMap((p) => p.ngoCandidateIds ?? []).filter((id) => id != null),
+      ),
+    );
+    const ngoEntities =
+      allNgoOnChainIds.length > 0
+        ? await this.ngoRepo.find({ where: { onChainId: In(allNgoOnChainIds) } })
+        : [];
+    const ngoByOnChainId = new Map(ngoEntities.map((n) => [n.onChainId!, n]));
+
+    return proposals.map((p) => ({
+      ...p,
+      ngo_candidates: (p.ngoCandidateIds ?? [])
+        .map((id) => this.mapNgoSummary(ngoByOnChainId.get(id)))
+        .filter(Boolean),
+    }));
   }
 
   async findOne(id: string) {
