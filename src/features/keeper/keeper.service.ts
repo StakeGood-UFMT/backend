@@ -332,7 +332,17 @@ export class KeeperService {
     });
 
     // Get account info for sequence number
-    const account = await server.loadAccount(keeperKeypair.publicKey());
+    let account: StellarSdk.Horizon.AccountResponse;
+    try {
+      account = await server.loadAccount(keeperKeypair.publicKey());
+    } catch (error: any) {
+      if (error.name === 'NotFoundError' || error.response?.status === 404) {
+        throw new Error(
+          `Stellar keeper account not found: ${keeperKeypair.publicKey()}. Please ensure the keeper wallet is funded with XLM.`,
+        );
+      }
+      throw error;
+    }
 
     const tx = new StellarSdk.TransactionBuilder(account, {
       fee: '10000',

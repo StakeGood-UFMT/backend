@@ -179,16 +179,7 @@ export class StellarWorkerService implements OnModuleInit, OnModuleDestroy {
 
         for (const ev of response.events) {
           const normalized = this.normalizeRpcEvent(ev);
-          const parsed = this.parseContractEvent(normalized);
-          if (!parsed) continue;
-
-          const alreadyProcessed = await this.isAlreadyProcessed(
-            normalized.txHash,
-            normalized.opIndex,
-          );
-          if (alreadyProcessed) continue;
-
-          await this.persistAtomically(parsed, normalized);
+          await this.dispatchEvent(normalized);
         }
 
         lastLedger = endLedger;
@@ -370,6 +361,8 @@ export class StellarWorkerService implements OnModuleInit, OnModuleDestroy {
         toBigintLikeString(tuple?.[0]) ??
         toBigintLikeString(body?.market_id) ??
         toBigintLikeString(body?.marketId) ??
+        toBigintLikeString(body?.contract_id) ??
+        toBigintLikeString(body?.contractId) ??
         toBigintLikeString(body?.id) ??
         toBigintLikeString(body) ??
         null;
@@ -877,6 +870,31 @@ export class StellarWorkerService implements OnModuleInit, OnModuleDestroy {
     this.logger.log(
       `Evento processado: ${parsed.kind} (ledger=${event.ledger})`,
     );
+  }
+
+  async dispatchEvent(event: HorizonEvent | string): Promise<void> {
+    let normalized: HorizonEvent;
+    if (typeof event === 'string') {
+      try {
+        normalized = JSON.parse(event) as HorizonEvent;
+      } catch (err: any) {
+        this.logger.error(`Failed to parse event JSON: ${err.message}`);
+        return;
+      }
+    } else {
+      normalized = event;
+    }
+
+    const parsed = this.parseContractEvent(normalized);
+    if (!parsed) return;
+
+    const alreadyProcessed = await this.isAlreadyProcessed(
+      normalized.txHash,
+      normalized.opIndex,
+    );
+    if (alreadyProcessed) return;
+
+    await this.persistAtomically(parsed, normalized);
   }
 
   async isAlreadyProcessed(txHash: string, opIndex: number): Promise<boolean> {

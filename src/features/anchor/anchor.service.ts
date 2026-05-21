@@ -396,7 +396,17 @@ export class AnchorService {
     );
 
     const horizon = new StellarSdk.Horizon.Server(horizonUrl);
-    const account = await horizon.loadAccount(user.primaryWallet);
+    let account: StellarSdk.Horizon.AccountResponse;
+    try {
+      account = await horizon.loadAccount(user.primaryWallet);
+    } catch (error: any) {
+      if (error.name === 'NotFoundError' || error.response?.status === 404) {
+        throw new BadRequestException(
+          `Stellar account not found for wallet: ${user.primaryWallet}. Please fund your wallet with XLM to activate it on the Stellar network.`,
+        );
+      }
+      throw error;
+    }
     const asset = new StellarSdk.Asset(dto.assetCode, dto.assetIssuer);
 
     const op = StellarSdk.Operation.changeTrust({

@@ -5,6 +5,7 @@ import { MarketEntity } from '../../database/entities/market.entity';
 import { AuditLogEntity } from '../../database/entities/audit-log.entity';
 import { TxIntentEntity } from '../../database/entities/tx-intent.entity';
 import { ImpactLedgerEntryEntity } from '../../database/entities/impact-ledger-entry.entity';
+import { UserEntity } from '../../database/entities/user.entity';
 import { CreateMarketDto } from './dto/create-market.dto';
 import * as StellarSdk from '@stellar/stellar-sdk';
 import { ConfigService } from '@nestjs/config';
@@ -26,6 +27,8 @@ export class AdminService {
     private readonly intentRepo: Repository<TxIntentEntity>,
     @InjectRepository(ImpactLedgerEntryEntity)
     private readonly ledgerRepo: Repository<ImpactLedgerEntryEntity>,
+    @InjectRepository(UserEntity)
+    private readonly userRepo: Repository<UserEntity>,
     private readonly dataSource: DataSource,
     private readonly config: ConfigService,
   ) {}
@@ -124,7 +127,17 @@ export class AdminService {
     const horizon = this.getHorizonServer();
     const rpc = this.getRpcServer();
 
-    const account = await horizon.loadAccount(sourceWallet);
+    let account: StellarSdk.Horizon.AccountResponse;
+    try {
+      account = await horizon.loadAccount(sourceWallet);
+    } catch (error: any) {
+      if (error.name === 'NotFoundError' || error.response?.status === 404) {
+        throw new BadRequestException(
+          `Stellar admin account not found for wallet: ${sourceWallet}. Please ensure the admin wallet is funded with XLM.`,
+        );
+      }
+      throw error;
+    }
     const tx = new StellarSdk.TransactionBuilder(account, {
       fee: '10000',
       networkPassphrase,
@@ -658,5 +671,62 @@ export class AdminService {
       .build();
 
     return tx.toXDR();
+  }
+
+  async getAdmins() {
+    return this.userRepo.find({
+      where: { role: 'admin' },
+      order: { adminJoinedAt: 'DESC', createdAt: 'DESC' },
+    });
+  }
+
+  async buildAddAdminXdr(params: { adminWallet: string; newAdminWallet: string }): Promise<{ xdr: string; txHash: string }> {
+    const contractId = this.getContractId();
+    const adminAddr = this.parseAddress(params.adminWallet, 'admin wallet');
+    const newAdminAddr = this.parseAddress(params.newAdminWallet, 'new admin wallet');
+
+    const op = StellarSdk.Operation.invokeHostFunction({
+      func: StellarSdk.xdr.HostFunction.hostFunctionTypeInvokeContract(
+        new StellarSdk.xdr.InvokeContractArgs({
+          contractAddress: this.parseAddress(contractId, 'contract').toScAddress(),
+          functionName: 'add_admin',
+          args: [
+            StellarSdk.nativeToScVal(adminAddr),
+            StellarSdk.nativeToScVal(newAdminAddr),
+          ],
+        }),
+      ),
+      auth: [],
+    });
+
+    const built = await this.buildSimulatedXdr(params.adminWallet, op);
+    return { xdr: built.xdr, txHash: built.txHash };
+  }
+
+  async buildRemoveAdminXdr(params: { adminWallet: string; adminToRemoveWallet: string }): Promise<{ xdr: string; txHash: string }> {
+    const contractId = this.getContractId();
+    const adminAddr = this.parseAddress(params.adminWallet, 'admin wallet');
+    const adminToRemoveAddr = this.parseAddress(params.adminToRemoveWallet, 'admin to remove wallet');
+
+    if (params.adminWallet === params.adminToRemoveWallet) {
+      throw new BadRequestException('You cannot remove yourself as an administrator.');
+    }
+
+    const op = StellarSdk.Operation.invokeHostFunction({
+      func: StellarSdk.xdr.HostFunction.hostFunctionTypeInvokeContract(
+        new StellarSdk.xdr.InvokeContractArgs({
+          contractAddress: this.parseAddress(contractId, 'contract').toScAddress(),
+          functionName: 'remove_admin',
+          args: [
+            StellarSdk.nativeToScVal(adminAddr),
+            StellarSdk.nativeToScVal(adminToRemoveAddr),
+          ],
+        }),
+      ),
+      auth: [],
+    });
+
+    const built = await this.buildSimulatedXdr(params.adminWallet, op);
+    return { xdr: built.xdr, txHash: built.txHash };
   }
 }

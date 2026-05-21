@@ -226,7 +226,17 @@ export class TransactionsService {
     const horizon = this.getHorizonServer();
     const rpc = this.getRpcServer();
 
-    const account = await horizon.loadAccount(user.primaryWallet);
+    let account: StellarSdk.Horizon.AccountResponse;
+    try {
+      account = await horizon.loadAccount(user.primaryWallet);
+    } catch (error: any) {
+      if (error.name === 'NotFoundError' || error.response?.status === 404) {
+        throw new BadRequestException(
+          `Stellar account not found for wallet: ${user.primaryWallet}. Please fund your wallet with XLM to activate it on the Stellar network.`,
+        );
+      }
+      throw error;
+    }
     const tx = new StellarSdk.TransactionBuilder(account, {
       fee: '10000',
       networkPassphrase,
@@ -336,7 +346,17 @@ export class TransactionsService {
     const horizon = this.getHorizonServer();
     const rpc = this.getRpcServer();
 
-    const account = await horizon.loadAccount(user.primaryWallet);
+    let account: StellarSdk.Horizon.AccountResponse;
+    try {
+      account = await horizon.loadAccount(user.primaryWallet);
+    } catch (error: any) {
+      if (error.name === 'NotFoundError' || error.response?.status === 404) {
+        throw new BadRequestException(
+          `Stellar account not found for wallet: ${user.primaryWallet}. Please fund your wallet with XLM to activate it on the Stellar network.`,
+        );
+      }
+      throw error;
+    }
     const tx = new StellarSdk.TransactionBuilder(account, {
       fee: '10000',
       networkPassphrase,
@@ -544,6 +564,49 @@ export class TransactionsService {
       dto.txHash && /^[0-9a-fA-F]{64}$/.test(dto.txHash)
         ? dto.txHash
         : String((send as any).hash ?? tx.hash().toString('hex'));
+
+    // Admin synchronization hooks
+    try {
+      const op = tx.operations[0];
+      if (op && op.type === 'invokeHostFunction') {
+        const hostFn = (op as any).func;
+        if (hostFn && hostFn.switch().name === 'hostFunctionTypeInvokeContract') {
+          const invokeArgs = hostFn.invokeContract();
+          const functionName = invokeArgs.functionName().toString();
+          const args = invokeArgs.args();
+
+          if (functionName === 'add_admin') {
+            const newAdminWallet = StellarSdk.scValToNative(args[1]);
+            if (typeof newAdminWallet === 'string' && newAdminWallet.startsWith('G')) {
+              let user = await this.userRepo.findOne({ where: { primaryWallet: newAdminWallet } });
+              if (!user) {
+                user = this.userRepo.create({
+                  primaryWallet: newAdminWallet,
+                  role: 'admin',
+                  adminJoinedAt: new Date(),
+                });
+              } else {
+                user.role = 'admin';
+                user.adminJoinedAt = new Date();
+              }
+              await this.userRepo.save(user);
+            }
+          } else if (functionName === 'remove_admin') {
+            const adminToRemoveWallet = StellarSdk.scValToNative(args[1]);
+            if (typeof adminToRemoveWallet === 'string') {
+              const user = await this.userRepo.findOne({ where: { primaryWallet: adminToRemoveWallet } });
+              if (user) {
+                user.role = 'user';
+                user.adminJoinedAt = undefined;
+                await this.userRepo.save(user);
+              }
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Failed to execute admin sync hook:', err);
+    }
 
     if (canPersistPosition) {
       await this.userPositionRepo.save({

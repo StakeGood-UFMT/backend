@@ -1,9 +1,13 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { MarketsService } from './markets.service';
 import { MarketEntity } from '../../database/entities/market.entity';
 import { MarketSnapshotEntity } from '../../database/entities/market-snapshot.entity';
+import { UserPositionEntity } from '../../database/entities/user-position.entity';
+import { UserEntity } from '../../database/entities/user.entity';
+import { NgoEntity } from '../../database/entities/ngo.entity';
 import { MarketSortOption } from './dto/list-markets-query.dto';
 
 const makeMarket = (overrides: Partial<MarketEntity> = {}): MarketEntity =>
@@ -42,9 +46,12 @@ const makeSnapshot = (
   return snap;
 };
 
-const buildQueryBuilderMock = (result: any) => ({
-  andWhere: jest.fn().mockReturnThis(),
+const buildQueryBuilderMock = (result: any, rawResult?: any) => ({
+  select: jest.fn().mockReturnThis(),
+  addSelect: jest.fn().mockReturnThis(),
   where: jest.fn().mockReturnThis(),
+  andWhere: jest.fn().mockReturnThis(),
+  groupBy: jest.fn().mockReturnThis(),
   orderBy: jest.fn().mockReturnThis(),
   addOrderBy: jest.fn().mockReturnThis(),
   distinctOn: jest.fn().mockReturnThis(),
@@ -56,12 +63,17 @@ const buildQueryBuilderMock = (result: any) => ({
   getOne: jest
     .fn()
     .mockResolvedValue(Array.isArray(result) ? (result[0] ?? null) : result),
+  getRawOne: jest.fn().mockResolvedValue(rawResult ?? { yes: '0', no: '0', total: '0' }),
+  getRawMany: jest.fn().mockResolvedValue(Array.isArray(result) ? result : []),
 });
 
 describe('MarketsService', () => {
   let service: MarketsService;
   let marketRepo: any;
   let snapshotRepo: any;
+  let userPositionRepo: any;
+  let userRepo: any;
+  let ngoRepo: any;
 
   beforeEach(async () => {
     marketRepo = {
@@ -72,14 +84,31 @@ describe('MarketsService', () => {
       createQueryBuilder: jest.fn(),
       findOne: jest.fn(),
     };
+    userPositionRepo = {
+      createQueryBuilder: jest.fn().mockImplementation(() => buildQueryBuilderMock([])),
+      findOne: jest.fn(),
+      count: jest.fn(),
+    };
+    userRepo = {
+      findOne: jest.fn(),
+    };
+    ngoRepo = {
+      find: jest.fn(),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         MarketsService,
         { provide: getRepositoryToken(MarketEntity), useValue: marketRepo },
+        { provide: getRepositoryToken(MarketSnapshotEntity), useValue: snapshotRepo },
+        { provide: getRepositoryToken(UserPositionEntity), useValue: userPositionRepo },
+        { provide: getRepositoryToken(UserEntity), useValue: userRepo },
+        { provide: getRepositoryToken(NgoEntity), useValue: ngoRepo },
         {
-          provide: getRepositoryToken(MarketSnapshotEntity),
-          useValue: snapshotRepo,
+          provide: ConfigService,
+          useValue: {
+            get: jest.fn((k: string, def?: any) => (k === 'NODE_ENV' ? 'test' : def)),
+          },
         },
       ],
     }).compile();
