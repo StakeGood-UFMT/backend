@@ -129,6 +129,12 @@ export class ProposalService {
       throw new ForbiddenException('Proposal already moderated');
     }
 
+    if (proposal.lockAt && new Date(proposal.lockAt) <= new Date()) {
+      throw new BadRequestException(
+        'A data de bloqueio (lock date) desta proposta está no passado. Ela deve ser rejeitada ou recriada com uma data futura.',
+      );
+    }
+
     if (!proposal.reservedOnChainId) {
       proposal.reservedOnChainId = await this.nextOnChainId();
       await this.proposalRepo.save(proposal);

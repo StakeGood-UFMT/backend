@@ -148,7 +148,8 @@ export class AdminService {
 
     const sim = await rpc.simulateTransaction(tx);
     if (StellarSdk.rpc.Api.isSimulationError(sim)) {
-      throw new BadRequestException(sim.error);
+      const friendlyError = this.getFriendlyContractError(sim.error);
+      throw new BadRequestException(friendlyError);
     }
     if (!StellarSdk.rpc.Api.isSimulationSuccess(sim)) {
       throw new BadRequestException('Simulation failed');
@@ -156,6 +157,56 @@ export class AdminService {
 
     const assembled = StellarSdk.rpc.assembleTransaction(tx, sim).build();
     return { xdr: assembled.toXDR(), txHash: assembled.hash().toString('hex') };
+  }
+
+  private getFriendlyContractError(simError: string): string {
+    const code = this.extractContractErrorCode(simError);
+    if (code === null) return simError;
+
+    switch (code) {
+      case 1:
+        return 'Already initialized (Já inicializado).';
+      case 2:
+        return 'NGO not found on-chain (ONG não encontrada no contrato).';
+      case 3:
+        return 'NGO already exists (ONG já cadastrada).';
+      case 4:
+        return 'Invalid configuration: the lock time must be in the future, or the fees exceed 100% (Configuração inválida: a data de bloqueio precisa ser no futuro ou a soma das taxas ultrapassa 100%).';
+      case 5:
+        return 'Market not found (Mercado não encontrado).';
+      case 6:
+        return 'Market closed (Mercado fechado).';
+      case 7:
+        return 'Hedge not allowed (Hedge não permitido).';
+      case 8:
+        return 'Invalid outcome (Resultado inválido).';
+      case 9:
+        return 'Caller is not the Oracle (Apenas o Oracle pode resolver).';
+      case 10:
+        return 'No stake found (Nenhum stake encontrado).';
+      case 11:
+        return 'Already claimed (Recompensa já resgatada).';
+      case 12:
+        return 'Market not finished yet (O mercado ainda não encerrou).';
+      case 13:
+        return 'Cannot vote (Não pode votar).';
+      case 14:
+        return 'Already voted (Já votou).';
+      case 15:
+        return 'Insufficient credits (Créditos insuficientes).';
+      case 16:
+        return 'Already distributed (Fundos de impacto já distribuídos).';
+      case 17:
+        return 'Limit exceeded (Limite excedido).';
+      case 18:
+        return 'Not admin (Apenas administradores podem executar esta ação).';
+      case 19:
+        return 'Invalid NGO option (Opção de ONG inválida).';
+      case 20:
+        return 'Invalid NGO candidates (Candidatos de ONGs inválidos).';
+      default:
+        return `Smart Contract Error #${code}`;
+    }
   }
 
   private extractContractErrorCode(message: unknown): number | null {
