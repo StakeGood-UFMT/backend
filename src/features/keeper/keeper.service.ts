@@ -294,6 +294,10 @@ export class KeeperService {
       'STELLAR_HORIZON_URL',
       'https://horizon-testnet.stellar.org',
     );
+    const rpcUrl = this.config.get<string>(
+      'STELLAR_RPC_URL',
+      'https://soroban-testnet.stellar.org',
+    );
     const networkPassphrase = this.config.get<string>(
       'STELLAR_NETWORK_PASSPHRASE',
       StellarSdk.Networks.TESTNET,
@@ -310,31 +314,32 @@ export class KeeperService {
     }
 
     const keeperKeypair = StellarSdk.Keypair.fromSecret(keeperSecret);
-    const server = new StellarSdk.Horizon.Server(horizonUrl);
+    const horizon = new StellarSdk.Horizon.Server(horizonUrl);
+    const rpc = new StellarSdk.rpc.Server(rpcUrl, {
+      allowHttp: rpcUrl.startsWith('http://'),
+    });
 
-    // Build the operation
+    // Build the operation — Vec<u64> must be encoded as scvVec of u64 ScVals
+    const idsScVal = StellarSdk.xdr.ScVal.scvVec(
+      marketIds.map((id) => StellarSdk.nativeToScVal(id, { type: 'u64' })),
+    );
+
     const op = StellarSdk.Operation.invokeHostFunction({
       func: StellarSdk.xdr.HostFunction.hostFunctionTypeInvokeContract(
         new StellarSdk.xdr.InvokeContractArgs({
           contractAddress:
             StellarSdk.Address.fromString(contractId).toScAddress(),
           functionName: 'batch_bump_ttl',
-          args: [
-            StellarSdk.nativeToScVal(
-              marketIds.map((id) =>
-                StellarSdk.nativeToScVal(id, { type: 'u64' }),
-              ),
-            ),
-          ],
+          args: [idsScVal],
         }),
       ),
       auth: [],
     });
 
-    // Get account info for sequence number
+    // Get account info for sequence number via Horizon
     let account: StellarSdk.Horizon.AccountResponse;
     try {
-      account = await server.loadAccount(keeperKeypair.publicKey());
+      account = await horizon.loadAccount(keeperKeypair.publicKey());
     } catch (error: any) {
       if (error.name === 'NotFoundError' || error.response?.status === 404) {
         throw new Error(
@@ -352,10 +357,53 @@ export class KeeperService {
       .setTimeout(StellarSdk.TimeoutInfinite)
       .build();
 
-    tx.sign(keeperKeypair);
+    // Soroban contract calls require simulation to obtain footprint + auth entries
+    const sim = await rpc.simulateTransaction(tx);
+    if (StellarSdk.rpc.Api.isSimulationError(sim)) {
+      throw new Error(`Simulação falhou: ${sim.error}`);
+    }
+    if (!StellarSdk.rpc.Api.isSimulationSuccess(sim)) {
+      throw new Error('Simulação não retornou sucesso.');
+    }
 
-    const result = await server.submitTransaction(tx);
-    this.logger.log(`Transação enviada: ${result.hash}`);
-    return result.hash;
+    // assembleTransaction injects the footprint and resource fees
+    const assembled = StellarSdk.rpc.assembleTransaction(tx, sim).build();
+    assembled.sign(keeperKeypair);
+
+    // Submit via Soroban RPC, not Horizon
+    const sendResp = await rpc.sendTransaction(assembled);
+    if (sendResp.status === 'ERROR') {
+      throw new Error(`Envio da transação falhou: ${sendResp.errorResult?.toXDR('base64') ?? 'unknown error'}`);
+    }
+
+    this.logger.log(`Transação enviada: ${sendResp.hash} (status: ${sendResp.status})`);
+
+    // Poll until the transaction is confirmed (SUCCESS or FAILED).
+    // A Soroban tx is only applied to the ledger state once confirmed — not on PENDING/DUPLICATE.
+    // Without this, the frontend reloads TTL data before the bump takes effect.
+    const hash = sendResp.hash;
+    const maxAttempts = 30;
+    const pollIntervalMs = 2000;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      await new Promise((r) => setTimeout(r, pollIntervalMs));
+      try {
+        const txStatus = await rpc.getTransaction(hash);
+        if (txStatus.status === StellarSdk.rpc.Api.GetTransactionStatus.SUCCESS) {
+          this.logger.log(`Transação confirmada com sucesso: ${hash}`);
+          return hash;
+        }
+        if (txStatus.status === StellarSdk.rpc.Api.GetTransactionStatus.FAILED) {
+          throw new Error(`Transação falhou na rede: ${hash}`);
+        }
+        // NOT_FOUND or still pending — continue polling
+        this.logger.debug(`Aguardando confirmação da transação ${hash} (tentativa ${attempt + 1}/${maxAttempts})...`);
+      } catch (e: any) {
+        if (e?.message?.startsWith('Transação falhou')) throw e;
+        this.logger.warn(`Erro ao verificar status da transação: ${e?.message ?? e}`);
+      }
+    }
+
+    throw new Error(`Timeout aguardando confirmação da transação: ${hash}`);
   }
 }
