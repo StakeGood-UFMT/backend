@@ -38,8 +38,7 @@ export class SettingsService {
     private readonly twoFactorService: TwoFactorService,
   ) {}
 
-  /** In-memory store for pending 2FA secrets during setup. */
-  private readonly pending2faSecrets = new Map<string, string>();
+
 
   // ─────────────────────────────────────────────
   //  Internal helpers
@@ -179,12 +178,7 @@ export class SettingsService {
   //  Issues a short-lived nonce for the secondary wallet to sign.
   // ─────────────────────────────────────────────
 
-  /** In-memory nonce store (keyed: `${userId}:${address}`).
-   *  In production this should be Redis with a TTL. */
-  private readonly pendingChallenges = new Map<
-    string,
-    { nonce: string; expiresAt: number }
-  >();
+
 
   async createWalletChallenge(userId: string, dto: LinkWalletChallengeDto) {
     const { address } = dto;
@@ -215,7 +209,9 @@ export class SettingsService {
     const nonce = crypto.randomBytes(32).toString('hex');
     const expiresAt = Date.now() + 5 * 60 * 1000; // 5 min
 
-    this.pendingChallenges.set(`${userId}:${address}`, { nonce, expiresAt });
+    const challenges = details.pendingChallenges || {};
+    challenges[address] = { nonce, expiresAt };
+    await this.detailsRepo.update(details.id, { pendingChallenges: challenges });
 
     return {
       nonce,
@@ -233,8 +229,9 @@ export class SettingsService {
   async verifyWalletLink(userId: string, dto: LinkWalletVerifyDto) {
     const { address, signature, nonce } = dto;
 
-    const key = `${userId}:${address}`;
-    const challenge = this.pendingChallenges.get(key);
+    const details = await this.getOrCreate(userId);
+    const challenges = details.pendingChallenges || {};
+    const challenge = challenges[address];
 
     if (!challenge) {
       throw new BadRequestException(
@@ -243,7 +240,8 @@ export class SettingsService {
     }
 
     if (Date.now() > challenge.expiresAt) {
-      this.pendingChallenges.delete(key);
+      delete challenges[address];
+      await this.detailsRepo.update(details.id, { pendingChallenges: challenges });
       throw new BadRequestException('Challenge nonce expired');
     }
 
@@ -301,27 +299,29 @@ export class SettingsService {
     }
 
     // Clean up nonce
-    this.pendingChallenges.delete(key);
+    delete challenges[address];
 
     // Persist linked wallet
-    const details = await this.getOrCreate(userId);
-
     const alreadyLinked = details.linkedWallets.some(
       (w) => w.address === address,
     );
+    let updated = details.linkedWallets;
     if (!alreadyLinked) {
-      const updated = [
+      updated = [
         ...details.linkedWallets,
         { address, linkedAt: new Date().toISOString() },
       ];
-      await this.detailsRepo.update(details.id, { linkedWallets: updated });
-      details.linkedWallets = updated;
     }
+
+    await this.detailsRepo.update(details.id, { 
+      pendingChallenges: challenges,
+      linkedWallets: updated 
+    });
 
     return {
       linked: true,
       address,
-      linkedWallets: details.linkedWallets,
+      linkedWallets: updated,
     };
   }
 
@@ -344,42 +344,7 @@ export class SettingsService {
     return { unlinked: true, address, linkedWallets: updated };
   }
 
-  // ─────────────────────────────────────────────
-  //  Simple Wallet Link (no challenge)
-  // ─────────────────────────────────────────────
 
-  async addWalletSimple(userId: string, address: string) {
-    if (!address || address.length !== 56 || !address.startsWith('G')) {
-      throw new BadRequestException('Invalid Stellar wallet address');
-    }
-
-    const details = await this.getOrCreate(userId);
-
-    const alreadyLinked = details.linkedWallets.some(
-      (w) => w.address === address,
-    );
-    if (alreadyLinked) {
-      throw new ConflictException('Wallet already linked to this account');
-    }
-
-    // Check if it's someone's primary wallet
-    const taken = await this.userRepo.findOne({
-      where: { primaryWallet: address },
-    });
-    if (taken) {
-      throw new ConflictException(
-        'Wallet is already registered as a primary wallet',
-      );
-    }
-
-    const updated = [
-      ...details.linkedWallets,
-      { address, linkedAt: new Date().toISOString() },
-    ];
-    await this.detailsRepo.update(details.id, { linkedWallets: updated });
-
-    return this.getSettings(userId);
-  }
 
   // ─────────────────────────────────────────────
   //  2FA – stub for v2 (schema already present)
@@ -409,9 +374,11 @@ export class SettingsService {
       secret,
     );
 
-    // Store in memory for verification step (expires in 10 mins)
-    this.pending2faSecrets.set(userId, secret);
-    setTimeout(() => this.pending2faSecrets.delete(userId), 10 * 60 * 1000);
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 mins
+    await this.detailsRepo.update(details.id, {
+      pending2faSecret: secret,
+      pending2faSecretExpiresAt: expiresAt,
+    });
 
     return {
       qrCode,
@@ -424,8 +391,11 @@ export class SettingsService {
    * Only at this point is the secret encrypted and persisted.
    */
   async verifyAndEnable2fa(userId: string, token: string) {
-    const secret = this.pending2faSecrets.get(userId);
-    if (!secret) {
+    const details = await this.getOrCreate(userId);
+    const secret = details.pending2faSecret;
+    const expiresAt = details.pending2faSecretExpiresAt;
+
+    if (!secret || !expiresAt || new Date() > new Date(expiresAt)) {
       throw new BadRequestException(
         '2FA setup not initiated or session expired. Please try again.',
       );
@@ -437,14 +407,13 @@ export class SettingsService {
     }
 
     const encryptedSecret = this.twoFactorService.encryptSecret(secret);
-    const details = await this.getOrCreate(userId);
 
     await this.detailsRepo.update(details.id, {
       totpSecret: encryptedSecret,
       totpEnabled: true,
+      pending2faSecret: null,
+      pending2faSecretExpiresAt: null,
     });
-
-    this.pending2faSecrets.delete(userId);
 
     return {
       success: true,

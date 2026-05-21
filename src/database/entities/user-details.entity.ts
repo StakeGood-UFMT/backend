@@ -79,6 +79,18 @@ export class UserDetailsEntity {
   @Column({ name: 'totp_enabled', default: false })
   totpEnabled: boolean;
 
+  /** Temporary 2FA secret pending verification. */
+  @Column({ name: 'pending_2fa_secret', nullable: true })
+  pending2faSecret?: string;
+
+  /** Expiration timestamp for the pending 2FA secret. */
+  @Column({ name: 'pending_2fa_secret_expires_at', type: 'timestamp', nullable: true })
+  pending2faSecretExpiresAt?: Date;
+
+  /** Pending wallet connection signature challenges (address -> { nonce, expiresAt }). */
+  @Column({ name: 'pending_challenges', type: 'jsonb', nullable: true, default: {} })
+  pendingChallenges?: Record<string, { nonce: string; expiresAt: number }>;
+
   /** Version of terms accepted by the user. */
   @Column({ name: 'accepted_terms_version', nullable: true })
   acceptedTermsVersion?: string;

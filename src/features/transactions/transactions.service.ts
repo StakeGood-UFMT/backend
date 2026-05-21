@@ -457,6 +457,80 @@ export class TransactionsService {
       throw new BadRequestException('Invalid signedXdr');
     }
 
+    const amountNumber = dto.amount ? Number(dto.amount) : NaN;
+    const ngoOnChainId =
+      dto.ngo_id !== undefined && dto.ngo_id !== null ? Number(dto.ngo_id) : NaN;
+    const canPersistPosition =
+      jwtUser?.userId &&
+      dto.market_id &&
+      (dto.outcome === 'YES' || dto.outcome === 'NO') &&
+      Number.isFinite(amountNumber) &&
+      amountNumber > 0;
+
+    // VALIDATION: Decrypt and verify XDR arguments against DTO parameters
+    if (canPersistPosition) {
+      try {
+        const op = tx.operations[0];
+        if (!op || op.type !== 'invokeHostFunction') {
+          throw new BadRequestException('Transaction does not contain invokeHostFunction operation');
+        }
+
+        const hostFn = (op as any).func;
+        if (!hostFn || hostFn.switch().name !== 'hostFunctionTypeInvokeContract') {
+          throw new BadRequestException('Host function is not invokeContract');
+        }
+
+        const invokeArgs = hostFn.invokeContract();
+        const functionName = invokeArgs.functionName().toString();
+
+        if (functionName !== 'place_prediction') {
+          throw new BadRequestException(`Unexpected contract function: ${functionName}`);
+        }
+
+        const args = invokeArgs.args();
+        if (args.length < 5) {
+          throw new BadRequestException('Invalid place_prediction argument count');
+        }
+
+        const decodedUserAddress = StellarSdk.scValToNative(args[0]);
+        const decodedMarketId = StellarSdk.scValToNative(args[1]);
+        const decodedOutcome = StellarSdk.scValToNative(args[2]);
+        const decodedAmountStroops = StellarSdk.scValToNative(args[3]);
+        const decodedNgoId = StellarSdk.scValToNative(args[4]);
+
+        const market = await this.marketRepo.findOne({ where: { id: dto.market_id } });
+        if (!market) {
+          throw new BadRequestException('Market not found');
+        }
+
+        const user = await this.userRepo.findOne({ where: { id: jwtUser.userId } });
+        if (!user || user.primaryWallet !== decodedUserAddress) {
+          throw new BadRequestException('Transaction user wallet mismatch');
+        }
+
+        if (BigInt(market.onChainId) !== BigInt(decodedMarketId)) {
+          throw new BadRequestException('Transaction market ID mismatch');
+        }
+
+        const expectedOutcomeVal = dto.outcome === 'YES' ? 1 : 2;
+        if (Number(decodedOutcome) !== expectedOutcomeVal) {
+          throw new BadRequestException('Transaction outcome mismatch');
+        }
+
+        const expectedAmountStroops = BigInt(Math.floor(amountNumber * 10000000));
+        if (BigInt(decodedAmountStroops) !== expectedAmountStroops) {
+          throw new BadRequestException('Transaction amount mismatch');
+        }
+
+        if (Number(decodedNgoId) !== ngoOnChainId) {
+          throw new BadRequestException('Transaction NGO ID mismatch');
+        }
+      } catch (err) {
+        if (err instanceof BadRequestException) throw err;
+        throw new BadRequestException(`XDR verification failed: ${err.message}`);
+      }
+    }
+
     const send = await rpc.sendTransaction(tx);
     if (send.status === 'ERROR') {
       const detail =
@@ -470,16 +544,6 @@ export class TransactionsService {
       dto.txHash && /^[0-9a-fA-F]{64}$/.test(dto.txHash)
         ? dto.txHash
         : String((send as any).hash ?? tx.hash().toString('hex'));
-
-    const amountNumber = dto.amount ? Number(dto.amount) : NaN;
-    const ngoOnChainId =
-      dto.ngo_id !== undefined && dto.ngo_id !== null ? Number(dto.ngo_id) : NaN;
-    const canPersistPosition =
-      jwtUser?.userId &&
-      dto.market_id &&
-      (dto.outcome === 'YES' || dto.outcome === 'NO') &&
-      Number.isFinite(amountNumber) &&
-      amountNumber > 0;
 
     if (canPersistPosition) {
       await this.userPositionRepo.save({
